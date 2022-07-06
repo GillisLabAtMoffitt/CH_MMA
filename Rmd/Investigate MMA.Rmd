@@ -78,11 +78,15 @@ germline_patient_data <- germline_patient_data %>%
   mutate(MMA_germline_results_cat = case_when(
     MMA_germline_results <= 0.4          ~ "≤0.4 ~ normal",
     MMA_germline_results > 0.4           ~ ">0.4 ~ high"
-  )) %>% 
+  ), MMA_germline_results_cat = factor(MMA_germline_results_cat, 
+                                       levels = c("≤0.4 ~ normal", ">0.4 ~ high"))
+  ) %>% 
   mutate(MMA_germline_results_cat1 = case_when(
     MMA_germline_results <= median(MMA_germline_results, na.rm = TRUE)          ~ "≤ median MMA",
     MMA_germline_results > median(MMA_germline_results, na.rm = TRUE)           ~ "> median MMA"
-  ))
+  ), MMA_germline_results_cat1 = factor(MMA_germline_results_cat1, 
+                                       levels = c("≤ median MMA", "> median MMA"))
+  )
 ```
 <br>
 <br>
@@ -142,7 +146,8 @@ patients_clean_tumor %>%
   tbl_summary(by = CH_status, 
               label = list(CH_status ~ "CH status"),
               sort = list(everything() ~ "frequency")) %>% 
-  bold_labels() %>% add_p() %>% bold_p(t = .05)
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
+  modify_spanning_header(all_stat_cols() ~ "**CH status**")
 ```
 
 ```{r}
@@ -242,7 +247,8 @@ ch_wide %>%
               # label = list(CH_status ~ "CH status"),
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
-  bold_labels() %>% add_p() %>% bold_p(t = .05)
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
+  modify_spanning_header(all_stat_cols() ~ "**DNA damage genes expressed?**")
 ```
 
 ## Sensitivity analysis - MMA values by CH status in DNA damage genes only
@@ -256,7 +262,8 @@ ch_wide %>%
               type = list(c(MMA_MMdx_results, MMA_germline_results) ~ "continuous"),
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
-  bold_labels() %>% add_p() %>% bold_p(t = .05)
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
+  modify_spanning_header(all_stat_cols() ~ "**CH status**")
 ```
 ## MMA values by TET2/DNMT3A genes Y/N
 ```{r by TD}
@@ -267,7 +274,8 @@ ch_wide %>%
               # label = list(CH_status ~ "CH status"),
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
-  bold_labels() %>% add_p() %>% bold_p(t = .05)
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
+  modify_spanning_header(all_stat_cols() ~ "**TD genes expressed?**")
 ```
 
 ## Sensitivity analysis - MMA values by CH status in TET2/DNMT3A genes only
@@ -281,7 +289,8 @@ ch_wide %>%
               type = list(c(MMA_MMdx_results, MMA_germline_results) ~ "continuous"),
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
-  bold_labels() %>% add_p() %>% bold_p(t = .05)
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
+  modify_spanning_header(all_stat_cols() ~ "**CH status**")
 ```
 <br>
 
@@ -303,7 +312,8 @@ ch_genes %>%
   tbl_summary(by = CH_status, 
               label = list(CH_status ~ "CH status"),
               sort = list(everything() ~ "frequency")) %>% 
-  bold_labels() %>% add_p() %>% bold_p(t = .05) %>% add_q()
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>% add_q() %>%
+  modify_spanning_header(all_stat_cols() ~ "**CH status**")
 ```
 
 <div class = "row">
@@ -338,18 +348,18 @@ ch_genes %>%
 </div>
 
 ```{r}
-ch_genes %>% 
-  left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-  mutate(VAF_cat = case_when(
-    VAF_normal < 0.1            ~ "<10%",
-    VAF_normal >= 0.1           ~ "≥10%"
-  )) %>% 
-  ggplot(aes(x= VAF_cat, y= MMA_MMdx_results, color= VAF_cat))+
-  geom_boxplot()+
-  geom_jitter()+
-  theme_classic()+
-  facet_wrap(. ~ CH_status)+
-  stat_compare_means(size=5)
+# ch_genes %>% 
+#   left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+#   mutate(VAF_cat = case_when(
+#     VAF_normal < 0.1            ~ "<10%",
+#     VAF_normal >= 0.1           ~ "≥10%"
+#   )) %>% 
+#   ggplot(aes(x= VAF_cat, y= MMA_MMdx_results, color= VAF_cat))+
+#   geom_boxplot()+
+#   geom_jitter()+
+#   theme_classic()+
+#   facet_wrap(. ~ CH_status)+
+#   stat_compare_means(size=5)
 ```
 
 <div class = "row">
@@ -629,7 +639,7 @@ tbl1 <- patients_clean_tumor_male %>%
 tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os, 
              event = patients_clean_tumor_male$os_event) ~ 
                MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + ISS_at_MMdx + HCT_ever + regimen_categoryVCD_1 + CH_status, 
-             data =  patients_clean_tumor_malelo) %>%
+             data =  patients_clean_tumor_male) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
@@ -718,7 +728,7 @@ tbl1 <- patients_clean_tumor_male %>%
 tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os, 
              event = patients_clean_tumor_male$os_event) ~ 
                MMA_germline_results_cat1 + Age_at_MMonly_diagnosis + raceeth + ISS_at_MMdx + HCT_ever + regimen_categoryVCD_1 + CH_status, 
-             data =  patients_clean_tumor_malelo) %>%
+             data =  patients_clean_tumor_male) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
@@ -771,7 +781,7 @@ tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable*
 
 # Notes
 
-- Succinate
+- ~~Succinate~~
 - kidney dysfunction increases MMA
 
 
