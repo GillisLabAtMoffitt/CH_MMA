@@ -80,13 +80,13 @@ germline_patient_data <- germline_patient_data %>%
     MMA_germline_results > 0.4           ~ ">0.4 ~ high"
   ), MMA_germline_results_cat = factor(MMA_germline_results_cat, 
                                        levels = c("≤0.4 ~ normal", ">0.4 ~ high"))
-  ) %>% 
-  mutate(MMA_germline_results_cat1 = case_when(
-    MMA_germline_results <= median(MMA_germline_results, na.rm = TRUE)          ~ "≤ median MMA",
-    MMA_germline_results > median(MMA_germline_results, na.rm = TRUE)           ~ "> median MMA"
-  ), MMA_germline_results_cat1 = factor(MMA_germline_results_cat1, 
-                                       levels = c("≤ median MMA", "> median MMA"))
-  )
+  ) #%>% 
+  # mutate(MMA_germline_results_cat1 = case_when(
+  #   MMA_germline_results <= median(MMA_germline_results, na.rm = TRUE)          ~ "≤ median MMA",
+  #   MMA_germline_results > median(MMA_germline_results, na.rm = TRUE)           ~ "> median MMA"
+  # ), MMA_germline_results_cat1 = factor(MMA_germline_results_cat1, 
+  #                                      levels = c("≤ median MMA", "> median MMA"))
+  # )
 ```
 <br>
 <br>
@@ -117,6 +117,7 @@ germline_patient_data %>%
   filter(!is.na(MMA_MMdx_results)) %>% 
   ggplot(aes(x= MMA_MMdx_results))+
   geom_bar(stat = "count")+
+  geom_vline(xintercept = 0.4, color= "blue")+
   theme_classic()
 ```
 
@@ -125,6 +126,7 @@ germline_patient_data %>%
   filter(!is.na(MMA_germline_results)) %>% 
   ggplot(aes(x= MMA_germline_results))+
   geom_bar(stat = "count")+
+  geom_vline(xintercept = 0.4, color= "blue")+
   theme_classic()
 ```
 <br>
@@ -146,7 +148,7 @@ patients_clean_tumor %>%
   tbl_summary(by = CH_status, 
               label = list(CH_status ~ "CH status"),
               sort = list(everything() ~ "frequency")) %>% 
-  bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>% 
   modify_spanning_header(all_stat_cols() ~ "**CH status**")
 ```
 
@@ -170,7 +172,7 @@ patients_clean_tumor %>%
 <br>
 
 # III. MMA levels by CH_status classes (DNA damages and TD)
-
+DNA damage genes are TP53, PPM1D, CHEK2 and TD genes are TET2, DNMT3A.
 ```{r}
 path <- fs::path("","Volumes","Gillis_Research","Christelle Colin-Leitzinger", "CHIP in Avatar")
 
@@ -252,6 +254,7 @@ ch_wide %>%
 ```
 
 ## Sensitivity analysis - MMA values by CH status in DNA damage genes only
+**If no mutation in DNA damage genes, CH=no**
 ```{r}
 ch_wide %>%
   filter(DNA_damage_class == "Yes" | CH_status == "No CH") %>% 
@@ -263,7 +266,8 @@ ch_wide %>%
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
   bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
-  modify_spanning_header(all_stat_cols() ~ "**CH status**")
+  modify_spanning_header(all_stat_cols() ~ "**CH status**") %>% 
+  modify_footnote(all_stat_cols() ~ "**If no mutation in DNA damage genes, CH=no**")
 ```
 ## MMA values by TET2/DNMT3A genes Y/N
 ```{r by TD}
@@ -279,6 +283,7 @@ ch_wide %>%
 ```
 
 ## Sensitivity analysis - MMA values by CH status in TET2/DNMT3A genes only
+**If no mutation in TD genes, CH=no**
 ```{r}
 ch_wide %>%
   filter(TD_class == "Yes" | CH_status == "No CH") %>% 
@@ -290,16 +295,19 @@ ch_wide %>%
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
   bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
-  modify_spanning_header(all_stat_cols() ~ "**CH status**")
+  modify_spanning_header(all_stat_cols() ~ "**CH status**") %>% 
+    modify_footnote(all_stat_cols() ~ "**If no mutation in TD genes, CH=no**")
 ```
 <br>
 
 # IV. MMA level and VAF
-1 patient can be represented multiple times if multiple genes mutated.
+**If a patient has > 1 CH mutation, we used their highest VAF only.**
 
 ```{r MMA level and VAF}
 ch_genes %>% 
   full_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+  arrange(avatar_id, desc(VAF_normal)) %>% 
+  distinct(avatar_id, .keep_all = TRUE) %>% 
   mutate(CH_status = case_when(
     CH_status == "No CH"             ~ "No CH",
     CH_status == "CH" &
@@ -315,6 +323,79 @@ ch_genes %>%
   bold_labels() %>% add_p() %>% bold_p(t = .05) %>% add_q() %>%
   modify_spanning_header(all_stat_cols() ~ "**CH status**")
 ```
+<div class = "row">
+<div class = "col-md-4">
+```{r}
+ch_genes %>% 
+  full_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+  arrange(avatar_id, desc(VAF_normal)) %>% 
+  distinct(avatar_id, .keep_all = TRUE) %>% 
+  mutate(CH_status = case_when(
+    CH_status == "No CH"             ~ "No CH",
+    CH_status == "CH" &
+      VAF_normal < 0.1            ~ "<10%",
+    CH_status == "CH" &
+      VAF_normal >= 0.1           ~ "≥10%"
+  )) %>% 
+  filter(CH_status == "<10%" | CH_status == "≥10%") %>% 
+  select(MMA_MMdx_results, MMA_germline_results,
+         CH_status) %>% 
+  tbl_summary(by = CH_status, 
+              label = list(CH_status ~ "CH status"),
+              sort = list(everything() ~ "frequency")) %>% 
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>% 
+  modify_spanning_header(all_stat_cols() ~ "**CH status**")
+```
+</div>
+
+<div class = "col-md-4">
+```{r}
+ch_genes %>% 
+  full_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+  arrange(avatar_id, desc(VAF_normal)) %>% 
+  distinct(avatar_id, .keep_all = TRUE) %>% 
+  mutate(CH_status = case_when(
+    CH_status == "No CH"             ~ "No CH",
+    CH_status == "CH" &
+      VAF_normal < 0.1            ~ "<10%",
+    CH_status == "CH" &
+      VAF_normal >= 0.1           ~ "≥10%"
+  )) %>% 
+  filter(CH_status == "No CH" | CH_status == "≥10%") %>% 
+  select(MMA_MMdx_results, MMA_germline_results,
+         CH_status) %>% 
+  tbl_summary(by = CH_status, 
+              label = list(CH_status ~ "CH status"),
+              sort = list(everything() ~ "frequency")) %>% 
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>% 
+  modify_spanning_header(all_stat_cols() ~ "**CH status**")
+```
+</div>
+
+<div class = "col-md-4">
+```{r}
+ch_genes %>% 
+  full_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+  arrange(avatar_id, desc(VAF_normal)) %>% 
+  distinct(avatar_id, .keep_all = TRUE) %>% 
+  mutate(CH_status = case_when(
+    CH_status == "No CH"             ~ "No CH",
+    CH_status == "CH" &
+      VAF_normal < 0.1            ~ "<10%",
+    CH_status == "CH" &
+      VAF_normal >= 0.1           ~ "≥10%"
+  )) %>% 
+  filter(CH_status == "<10%" | CH_status == "No CH") %>% 
+  select(MMA_MMdx_results, MMA_germline_results,
+         CH_status) %>% 
+  tbl_summary(by = CH_status, 
+              label = list(CH_status ~ "CH status"),
+              sort = list(everything() ~ "frequency")) %>% 
+  bold_labels() %>% add_p() %>% bold_p(t = .05) %>% 
+  modify_spanning_header(all_stat_cols() ~ "**CH status**")
+```
+</div>
+</div>
 
 <div class = "row">
 <div class = "col-md-6">
@@ -691,93 +772,93 @@ tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable*
 </div>
 
 
-<div class = "row">
-<div class = "col-md-6">
-```{r, fig.height = 7}
-ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat1 + Sex, 
-                   data=patients_clean_tumor_male %>% 
-                     filter(Sex == "Male")),
-           title = "OS Analysis",
-           font.main = c(20, "bold", "black"),
-           font.x = c(18, "bold", "black"),
-           font.y = c(18, "bold", "black"),
-           font.legend = c(16, "black"),
-           font.tickslab = c(16, "bold", "black"),
-           size = 1.5,
+<!-- <div class = "row"> -->
+<!-- <div class = "col-md-6"> -->
+<!-- ```{r, fig.height = 7} -->
+<!-- ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat1 + Sex,  -->
+<!--                    data=patients_clean_tumor_male %>%  -->
+<!--                      filter(Sex == "Male")), -->
+<!--            title = "OS Analysis", -->
+<!--            font.main = c(20, "bold", "black"), -->
+<!--            font.x = c(18, "bold", "black"), -->
+<!--            font.y = c(18, "bold", "black"), -->
+<!--            font.legend = c(16, "black"), -->
+<!--            font.tickslab = c(16, "bold", "black"), -->
+<!--            size = 1.5, -->
 
-           xlab = "Time in months",
-           legend = "top",
-           legend.title = "",
-           pval = TRUE,
-           conf.int = FALSE,
-           # Censor
-           censor = TRUE
-) + guides(colour = guide_legend(ncol = 1))
+<!--            xlab = "Time in months", -->
+<!--            legend = "top", -->
+<!--            legend.title = "", -->
+<!--            pval = TRUE, -->
+<!--            conf.int = FALSE, -->
+<!--            # Censor -->
+<!--            censor = TRUE -->
+<!-- ) + guides(colour = guide_legend(ncol = 1)) -->
 
-tbl1 <- patients_clean_tumor_male %>% 
-  select(MMA_germline_results_cat1, 
-         Age_at_MMonly_diagnosis, raceeth,
-         ISS_at_MMdx, HCT_ever, regimen_categoryVCD_1,
-         CH_status) %>% 
-  tbl_uvregression(method = survival::coxph, 
-                   y = (Surv(time = patients_clean_tumor_male$month_at_os, 
-                             event = patients_clean_tumor_male$os_event)),
-                   exponentiate = TRUE) %>% 
-  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
-  bold_labels() %>% italicize_levels()
-tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os, 
-             event = patients_clean_tumor_male$os_event) ~ 
-               MMA_germline_results_cat1 + Age_at_MMonly_diagnosis + raceeth + ISS_at_MMdx + HCT_ever + regimen_categoryVCD_1 + CH_status, 
-             data =  patients_clean_tumor_male) %>%
-  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+<!-- tbl1 <- patients_clean_tumor_male %>%  -->
+<!--   select(MMA_germline_results_cat1,  -->
+<!--          Age_at_MMonly_diagnosis, raceeth, -->
+<!--          ISS_at_MMdx, HCT_ever, regimen_categoryVCD_1, -->
+<!--          CH_status) %>%  -->
+<!--   tbl_uvregression(method = survival::coxph,  -->
+<!--                    y = (Surv(time = patients_clean_tumor_male$month_at_os,  -->
+<!--                              event = patients_clean_tumor_male$os_event)), -->
+<!--                    exponentiate = TRUE) %>%  -->
+<!--   bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>% -->
+<!--   bold_labels() %>% italicize_levels() -->
+<!-- tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os,  -->
+<!--              event = patients_clean_tumor_male$os_event) ~  -->
+<!--                MMA_germline_results_cat1 + Age_at_MMonly_diagnosis + raceeth + ISS_at_MMdx + HCT_ever + regimen_categoryVCD_1 + CH_status,  -->
+<!--              data =  patients_clean_tumor_male) %>% -->
+<!--   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05) -->
 
-tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
-```
-</div>
+<!-- tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**")) -->
+<!-- ``` -->
+<!-- </div> -->
 
-<div class = "col-md-6">
-```{r, fig.height = 7}
-ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA_germline_results_cat1 + Sex, 
-                   data=patients_clean_tumor_male %>% 
-                     filter(Sex == "Male")),
-           title = "PFS Analysis",
-           font.main = c(20, "bold", "black"),
-           font.x = c(18, "bold", "black"),
-           font.y = c(18, "bold", "black"),
-           font.legend = c(16, "black"),
-           font.tickslab = c(16, "bold", "black"),
-           size = 1.5,
+<!-- <div class = "col-md-6"> -->
+<!-- ```{r, fig.height = 7} -->
+<!-- ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA_germline_results_cat1 + Sex,  -->
+<!--                    data=patients_clean_tumor_male %>%  -->
+<!--                      filter(Sex == "Male")), -->
+<!--            title = "PFS Analysis", -->
+<!--            font.main = c(20, "bold", "black"), -->
+<!--            font.x = c(18, "bold", "black"), -->
+<!--            font.y = c(18, "bold", "black"), -->
+<!--            font.legend = c(16, "black"), -->
+<!--            font.tickslab = c(16, "bold", "black"), -->
+<!--            size = 1.5, -->
 
-           xlab = "Time in months",
-           legend = "top",
-           legend.title = "",
-           pval = TRUE,
-           conf.int = FALSE,
-           # Censor
-           censor = TRUE
-) + guides(colour = guide_legend(ncol = 1))
+<!--            xlab = "Time in months", -->
+<!--            legend = "top", -->
+<!--            legend.title = "", -->
+<!--            pval = TRUE, -->
+<!--            conf.int = FALSE, -->
+<!--            # Censor -->
+<!--            censor = TRUE -->
+<!-- ) + guides(colour = guide_legend(ncol = 1)) -->
 
-tbl1 <- patients_clean_tumor_male %>% 
-  select(MMA_germline_results_cat1, 
-         Age_at_MMonly_diagnosis, raceeth,
-         ISS_at_MMdx, HCT_ever, regimen_categoryVCD_1,
-         CH_status) %>% 
-  tbl_uvregression(method = survival::coxph, 
-                   y = (Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
-                             event = patients_clean_tumor_male$drug_progression_event)),
-                   exponentiate = TRUE) %>% 
-  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
-  bold_labels() %>% italicize_levels()
-tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
-             event = patients_clean_tumor_male$drug_progression_event) ~ 
-               MMA_germline_results_cat1 + Age_at_MMonly_diagnosis + raceeth + ISS_at_MMdx + HCT_ever + regimen_categoryVCD_1 + CH_status, 
-             data =  patients_clean_tumor_male) %>%
-  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+<!-- tbl1 <- patients_clean_tumor_male %>%  -->
+<!--   select(MMA_germline_results_cat1,  -->
+<!--          Age_at_MMonly_diagnosis, raceeth, -->
+<!--          ISS_at_MMdx, HCT_ever, regimen_categoryVCD_1, -->
+<!--          CH_status) %>%  -->
+<!--   tbl_uvregression(method = survival::coxph,  -->
+<!--                    y = (Surv(time = patients_clean_tumor_male$month_at_progression_drug,  -->
+<!--                              event = patients_clean_tumor_male$drug_progression_event)), -->
+<!--                    exponentiate = TRUE) %>%  -->
+<!--   bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>% -->
+<!--   bold_labels() %>% italicize_levels() -->
+<!-- tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_progression_drug,  -->
+<!--              event = patients_clean_tumor_male$drug_progression_event) ~  -->
+<!--                MMA_germline_results_cat1 + Age_at_MMonly_diagnosis + raceeth + ISS_at_MMdx + HCT_ever + regimen_categoryVCD_1 + CH_status,  -->
+<!--              data =  patients_clean_tumor_male) %>% -->
+<!--   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05) -->
 
-tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
-```
-</div>
-</div>
+<!-- tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**")) -->
+<!-- ``` -->
+<!-- </div> -->
+<!-- </div> -->
 
 # Notes
 
