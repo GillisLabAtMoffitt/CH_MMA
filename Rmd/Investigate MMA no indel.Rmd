@@ -87,57 +87,64 @@ ch_genes <- read_csv(paste0(path, "/data/CHcalls_woINDELS_7.7.22_muts_Christelle
   distinct(patient_id, GENE, .keep_all = TRUE)
 
 # Load MRN
-IDs_list <- readxl::read_xlsx("MMA_avatar_lab_report.xlsx", sheet = "IDs list") %>% 
-  mutate(PATIENT_ID = as.character(PATIENT_ID)) %>% 
+IDs_list <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"), 
+                              sheet = "IDs list") %>%
+  mutate(PATIENT_ID = as.character(PATIENT_ID)) %>%
   mutate(MRN = as.character(MRN))
 
 # Load EGFR and more
-creatinine <- readxl::read_xlsx("MMA_avatar_lab_report_V2.xlsx", sheet = "Updated_Lab_Creatinine") %>% 
+creatinine <- readxl::read_xlsx(here::here("MMA_avatar_lab_report_V2.xlsx"), 
+                                sheet = "Updated_Lab_Creatinine") %>%
   left_join(IDs_list, .,
-            by = "PATIENT_ID") %>% 
-  filter(str_detect(LAB_RESULT, "\\d+ ?")) %>% 
-  # mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
+            by = "PATIENT_ID") %>%
+  filter(str_detect(LAB_RESULT, "\\d+ ?")) %>%
+  # mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>%
   filter(!is.na(LAB_RESULT) & SPECIMEN_TYPE == "Blood")
-bmi <- readxl::read_xlsx("MMA_avatar_lab_report.xlsx", sheet = "BMI") %>% 
+bmi <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"), 
+                         sheet = "BMI") %>%
   left_join(IDs_list, .,
-            by = "PATIENT_ID") %>% 
+            by = "PATIENT_ID") %>%
   filter(str_detect(VITALS_VALUE, "\\d+ ?"))
-height <- readxl::read_xlsx("MMA_avatar_lab_report.xlsx", sheet = "Height") %>% 
-  filter(str_detect(VITALS_UNITS, "cm|in")) %>% 
+height <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"), 
+                            sheet = "Height") %>%
+  filter(str_detect(VITALS_UNITS, "cm|in")) %>%
   left_join(IDs_list, .,
-            by = "PATIENT_ID") %>% 
-  filter(str_detect(VITALS_VALUE, "\\d+ ?")) %>% 
-  mutate(VITALS_VALUE = as.numeric(VITALS_VALUE)) %>% 
+            by = "PATIENT_ID") %>%
+  filter(str_detect(VITALS_VALUE, "\\d+ ?")) %>%
+  mutate(VITALS_VALUE = as.numeric(VITALS_VALUE)) %>%
   # Convert values to meter
   mutate(VITALS_VALUE = case_when(
     VITALS_UNITS == "cm"              ~ VITALS_VALUE / 100,
     str_detect(VITALS_UNITS, "in")    ~ VITALS_VALUE / 39.37
-  ), height_unit = "m") %>% 
-weight <- readxl::read_xlsx("MMA_avatar_lab_report.xlsx", sheet = "Weight") %>% 
-  filter(str_detect(VITALS_VALUE, "\\d+ ?") & 
-           !str_detect(VITALS_VALUE, "Not Done")) %>% 
-  mutate(VITALS_VALUE = as.numeric(VITALS_VALUE)) %>% 
-  filter(VITALS_VALUE > 0) %>% 
+  ), height_unit = "m")
+weight <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"), 
+                            sheet = "Weight") %>%
+  filter(str_detect(VITALS_VALUE, "\\d+ ?") &
+           !str_detect(VITALS_VALUE, "Not Done")) %>%
+  mutate(VITALS_VALUE = as.numeric(VITALS_VALUE)) %>%
+  filter(VITALS_VALUE > 0) %>%
   left_join(IDs_list, .,
             by = "PATIENT_ID")
-# egfr <- readxl::read_xlsx("egfr in Avatar patients.xlsx") %>% 
-#   filter(str_detect(LAB_RESULT, "\\d+ ?")) %>% 
+# egfr <- readxl::read_xlsx("egfr in Avatar patients.xlsx") %>%
+#   filter(str_detect(LAB_RESULT, "\\d+ ?")) %>%
 #   mutate(MRN = as.character(MRN))
-# egfr_Yifen <- readxl::read_xlsx("MMA_avatar_lab_report_V2.xlsx", sheet = "Updated_Lab_eGFR") %>% 
+# egfr_Yifen <- readxl::read_xlsx(here::here("MMA_avatar_lab_report_V2.xlsx"), sheet = "Updated_Lab_eGFR") %>%
 #   left_join(IDs_list, .,
-#             by = "PATIENT_ID") %>% 
+#             by = "PATIENT_ID") %>%
 #   filter(str_detect(LAB_RESULT, "\\d+ ?"))
-b12 <- readxl::read_xlsx("Vit b12 in Avatar patients.xlsx") %>% 
-  filter(!is.na(LAB_RESULT)) %>% 
+b12 <- readxl::read_xlsx(here::here("Vit b12 in Avatar patients.xlsx")) %>%
+  filter(!is.na(LAB_RESULT)) %>%
   mutate(MRN = as.character(MRN))
-b12_Yifen <- readxl::read_xlsx("MMA_avatar_lab_report.xlsx", sheet = "Lab_B12") %>% 
+b12_Yifen <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"), 
+                               sheet = "Lab_B12") %>%
   left_join(IDs_list, .,
-            by = "PATIENT_ID") %>% 
+            by = "PATIENT_ID") %>%
   filter(!is.na(LAB_RESULT))
-# MMA_2 <- readxl::read_xlsx("MMA_avatar_lab_report.xlsx", sheet = "Lab_MMA") %>% 
-#   left_join(IDs_list, .,
-#             by = "PATIENT_ID") %>% 
-#   filter(!is.na(LAB_RESULT))
+MMA_2 <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"), 
+                           sheet = "Lab_MMA") %>%
+  left_join(IDs_list, .,
+            by = "PATIENT_ID") %>%
+  filter(!is.na(LAB_RESULT))
 ```
 
 ```{r new CH status}
@@ -306,7 +313,7 @@ germline_patient_data <- germline_patient_data %>%
 # Calculate ideal dody weight
 # Males: IBW = 50 kg + 2.3 kg for each inch over 5 feet.
 # Females: IBW = 45.5 kg + 2.3 kg for each inch over 5 feet.
-  # Need height and weight closest to creatinine
+  # Need height closest to creatinine
   left_join(., height %>%
               select(MRN, VITALS_VALUE, VITALS_DTM),
             by = "MRN") %>%
@@ -317,13 +324,23 @@ germline_patient_data <- germline_patient_data %>%
   arrange(avatar_id, int) %>%
   select(-c(VITALS_DTM), height_at_creat = VITALS_VALUE) %>%
   distinct(avatar_id, .keep_all = TRUE) %>% 
+  # Need weight closest to creatinine
+  left_join(., weight %>%
+              select(MRN, VITALS_VALUE, VITALS_DTM),
+            by = "MRN") %>%
+  # Create var closest weight results to germline
+  mutate(int = abs(interval(start = VITALS_DTM,
+                            end = creatinine_date) /
+                     duration(n=1, units = "days"))) %>%
+  arrange(avatar_id, int) %>%
+  select(-c(VITALS_DTM, int), weight_at_creat = VITALS_VALUE) %>%
+  distinct(avatar_id, .keep_all = TRUE) %>% 
+  # Calculate bmi at creatinine
+  mutate(bmi_at_creatinine = 
+           weight_at_creat / 
+           (height_at_creat * height_at_creat)) %>% 
   
   # Now can Calculate ideal dody weight
-
-
-
-
-
   mutate(ideal_weight = case_when(
     Sex == "Female" &
       height_at_creat <= 1.524               ~ 45.5 + 2.3,
@@ -334,17 +351,17 @@ germline_patient_data <- germline_patient_data %>%
     Sex == "Male" &
       height_at_creat > 1.524                ~ 50 + (2.3 * (((height_at_creat - 1.524) / 0.0254)))
   )) %>% 
-  mutate(adjusted_weight = ((weight_at_creatinine - ideal_weight) * 0.40) + ideal_weight
+  mutate(adjusted_weight = ((weight_at_creat - ideal_weight) * 0.40) + ideal_weight
   ) %>%
   # Calculate CrCl
   mutate(CrCl = case_when(
     Sex == "Female"                   ~ ((
-      ((140 - age_at_creatinine) * weight_at_creatinine) /
+      ((140 - age_at_creatinine) * weight_at_creat) /
         (72 * creatinine_germline_results)) * 
         0.85),
     
     Sex == "Male"                     ~ (
-      ((140 - age_at_creatinine) * weight_at_creatinine) / 
+      ((140 - age_at_creatinine) * weight_at_creat) / 
         (72 * creatinine_germline_results)
       )
   ),
@@ -363,26 +380,82 @@ germline_patient_data <- germline_patient_data %>%
   ),
   adjusted_CrCl = round(adjusted_CrCl, 0)) %>% 
 
-  mutate(adjusted_CrCl1 = case_when(
+  mutate(calculated_CrCl = case_when(
     bmi_at_creatinine >= 25                 ~ adjusted_CrCl,
     bmi_at_creatinine < 25                  ~ CrCl
   ))
 ```
 
+```{r clean b12}
+b12_ <- bind_rows(b12 %>%
+              select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY),
+                     b12_Yifen %>%
+              select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY)
+              ) %>%
+              filter(!is.na(LAB_RESULT))
 
+germline_patient_data <- germline_patient_data %>%
+  left_join(., b12_,
+            by = "MRN") %>%
+  # # Create var closest b12 results to diagnosis
+  # mutate(int = abs(interval(start = LAB_DATE,
+  #                       end = date_of_MM_diagnosis) /
+  #          duration(n=1, units = "days"))) %>%
+  # group_by(avatar_id) %>%
+  # mutate(min = min(int)) %>%
+  # ungroup() %>%
+  # mutate(b12_MMdx_results = case_when(
+  #   min == int               ~ LAB_RESULT,
+  #   TRUE                     ~ NA_character_
+  # )) %>%
+  # Create var closest b12 results to germline
+  mutate(int = abs(interval(start = EVENT_START_DTM,
+                            end = collectiondt_germline) /
+                     duration(n=1, units = "days"))) %>%
+  arrange(avatar_id, int) %>% 
+  rename(b12_germline_results = LAB_RESULT, b12_unit = LAB_UNIT, 
+         b12_date = EVENT_START_DTM, b12_interpretation = NORMALCY) %>%
+  distinct(avatar_id, .keep_all = TRUE)
+```
+
+```{r more MMA}
+germline_patient_data <- germline_patient_data %>%
+  left_join(., MMA_2 %>%
+              select(MRN, LAB_RESULT, LAB_DATE),
+            by = "MRN") %>%
+  # Create var closest MMA_2 results to germline
+  mutate(int = abs(interval(start = LAB_DATE,
+                            end = collectiondt_germline) /
+                     duration(n=1, units = "days"))) %>%
+  arrange(avatar_id, int) %>%
+  select(-int,
+         MMA_germline_results_Yifen = LAB_RESULT,
+         MMA_date_Yifen = LAB_DATE) %>%
+  distinct(avatar_id, .keep_all = TRUE) %>%
+  # Take MMA closest to germline
+  
+  pivot_longer(cols = c(MMA_germline_results, MMA_germline_results_Yifen),
+             names_to = "MMA_data", values_to = "MMA_germline_results") %>%
+  mutate(MMA_date = case_when(
+    MMA_data == "MMA_germline_results"              ~ MMA_date,
+    MMA_data == "MMA_germline_results_Yifen"        ~ MMA_date_Yifen
+  )) %>%
+  arrange(avatar_id, MMA_date) %>%
+  distinct(avatar_id, .keep_all = TRUE)
+```
 
 
 ```{r save data}
 patients_MMA <- germline_patient_data %>% 
   select(avatar_id, MRN, starts_with("height"), starts_with("weight"), 
-         starts_with("bmi"), starts_with("MMA"), starts_with("egfr"), 
+         starts_with("bmi"), starts_with("MMA"), #starts_with("egfr"), 
          CrCl,
          starts_with("creatinine"), 
          starts_with("b12"), -MMA_MMdx_results)
 
 write_csv(germline_patient_data %>% 
   select(avatar_id, MRN, starts_with("height"), starts_with("weight"), 
-         starts_with("bmi"), starts_with("MMA"), starts_with("egfr"), 
+         starts_with("bmi"), starts_with("MMA"), #starts_with("egfr"), 
          CrCl,
          starts_with("b12"), -MMA_MMdx_results),
   "patients MRN with MMA data.csv")
@@ -426,8 +499,11 @@ germline_patient_data <- germline_patient_data %>%
 ```{r summ table}
 germline_patient_data %>% 
   mutate(Whole = "MM patients with WES") %>% 
-  select(MMA_MMdx_results, MMA_germline_results, 
-         egfr_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results, 
+         creatinine_germline_results,
+         calculated_CrCl,
+         b12_germline_results,
          Age_at_MMonly_diagnosis, Sex, raceeth, 
          Whole, ISS_at_MMdx,
          bmi_combined,
@@ -441,6 +517,7 @@ germline_patient_data %>%
   bold_labels()
 ```
 
+Take a look at the creatinine and CrCl
 ```{r}
 germline_patient_data %>% 
   filter(!is.na(creatinine_germline_results)) %>% 
@@ -464,6 +541,7 @@ germline_patient_data %>%
 #   theme_classic()
 ```
 
+Already seen MMA at germline
 ```{r}
 germline_patient_data %>% 
   filter(!is.na(MMA_germline_results)) %>% 
@@ -474,12 +552,12 @@ germline_patient_data %>%
 ```
 
 ```{r}
-germline_patient_data %>% 
-  filter(!is.na(egfr_germline_results)) %>% 
-  ggplot(aes(x= egfr_germline_results))+
-  geom_bar(stat = "count")+
-  geom_vline(xintercept = 0.4, color= "blue")+
-  theme_classic()
+# germline_patient_data %>% 
+#   filter(!is.na(egfr_germline_results)) %>% 
+#   ggplot(aes(x= egfr_germline_results))+
+#   geom_bar(stat = "count")+
+#   geom_vline(xintercept = 0.4, color= "blue")+
+#   theme_classic()
 ```
 <br>
 
@@ -495,7 +573,8 @@ patients_clean_tumor <- germline_patient_data %>%
 
 ```{r}
 patients_clean_tumor %>%
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -505,12 +584,12 @@ patients_clean_tumor %>%
 ```
 
 ```{r}
-patients_clean_tumor %>% 
-  filter(!is.na(MMA_MMdx_results) & !is.na(CH_status_no_indel)) %>%
-  ggplot(aes(x= CH_status_no_indel, y=MMA_MMdx_results))+
-  geom_boxplot()+
-  theme_classic()+
-  stat_compare_means()
+# patients_clean_tumor %>% 
+#   filter(!is.na(MMA_MMdx_results) & !is.na(CH_status_no_indel)) %>%
+#   ggplot(aes(x= CH_status_no_indel, y=MMA_MMdx_results))+
+#   geom_boxplot()+
+#   theme_classic()+
+#   stat_compare_means()
 ```
 
 ```{r}
@@ -591,7 +670,8 @@ ch_wide %>%
 61 CH - 17 with DNA damages genes
 ```{r by DNA damages}
 ch_wide %>%
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          DNA_damage_class) %>% 
   tbl_summary(by = DNA_damage_class, 
               # label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -612,10 +692,12 @@ ch_wide %>%
     DNA_damage_class == "Yes"               ~ "CH",
     CH_status_no_indel == "No_CH"           ~ "No CH"
   )) %>%
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel, CH_status, ASXL1, DNA_damage_class) %>% 
   tbl_summary(by = CH_status_no_indel, 
-              type = list(c(MMA_MMdx_results, MMA_germline_results) ~ "continuous"),
+              type = list(c(#MMA_MMdx_results, 
+                            MMA_germline_results) ~ "continuous"),
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
   bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
@@ -626,7 +708,8 @@ ch_wide %>%
 81 CH - 25 with TD genes
 ```{r by TD}
 ch_wide %>%
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          TD_class) %>% 
   tbl_summary(by = TD_class, 
               # label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -647,11 +730,13 @@ ch_wide %>%
     TD_class == "Yes"                       ~ "CH",
     CH_status_no_indel == "No_CH"           ~ "No CH"
   )) %>%
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               # label = list(CH_status_no_indel ~ "CH status wo indels"),
-              type = list(c(MMA_MMdx_results, MMA_germline_results) ~ "continuous"),
+              type = list(c(#MMA_MMdx_results, 
+                            MMA_germline_results) ~ "continuous"),
               sort = list(everything() ~ "frequency"),
               percent = "row") %>% 
   bold_labels() %>% add_p() %>% bold_p(t = .05) %>%
@@ -675,7 +760,8 @@ ch_genes %>%
     CH_status_no_indel == "CH" &
       VAF_normal >= 0.1           ~ "≥10%"
   )) %>% 
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -683,6 +769,8 @@ ch_genes %>%
   bold_labels() %>% add_p() %>% bold_p(t = .05) %>% add_q() %>%
   modify_spanning_header(all_stat_cols() ~ "**CH status wo indels**")
 ```
+
+Paired comparison
 <div class = "row">
 <div class = "col-md-4">
 ```{r}
@@ -698,7 +786,8 @@ ch_genes %>%
       VAF_normal >= 0.1           ~ "≥10%"
   )) %>% 
   filter(CH_status_no_indel == "<10%" | CH_status_no_indel == "≥10%") %>% 
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -722,7 +811,8 @@ ch_genes %>%
       VAF_normal >= 0.1           ~ "≥10%"
   )) %>% 
   filter(CH_status_no_indel == "No_CH" | CH_status_no_indel == "≥10%") %>% 
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -746,7 +836,8 @@ ch_genes %>%
       VAF_normal >= 0.1           ~ "≥10%"
   )) %>% 
   filter(CH_status_no_indel == "<10%" | CH_status_no_indel == "No_CH") %>% 
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -757,52 +848,52 @@ ch_genes %>%
 </div>
 </div>
 
-<div class = "row">
-<div class = "col-md-6">
-```{r}
-ch_genes %>% 
-  left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-  ggplot(aes(x= MMA_MMdx_results, y= VAF_normal))+
-  geom_point()+
-  geom_smooth(method = "lm") +
-  stat_cor(size=5)+ 
-  stat_regline_equation(label.x = 0.65, size=5)+
-  theme_classic()
-```
-</div>
+<!-- <div class = "row"> -->
+<!-- <div class = "col-md-6"> -->
+<!-- ```{r} -->
+<!-- ch_genes %>% -->
+<!--   left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% -->
+<!--   ggplot(aes(x= MMA_MMdx_results, y= VAF_normal))+ -->
+<!--   geom_point()+ -->
+<!--   geom_smooth(method = "lm") + -->
+<!--   stat_cor(size=5)+ -->
+<!--   stat_regline_equation(label.x = 0.65, size=5)+ -->
+<!--   theme_classic() -->
+<!-- ``` -->
+<!-- </div> -->
 
-<div class = "col-md-6">
-```{r}
-ch_genes %>% 
-  left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-  mutate(VAF_cat = case_when(
-    VAF_normal < 0.1            ~ "<10%",
-    VAF_normal >= 0.1           ~ "≥10%"
-  )) %>% 
-  filter(!is.na(VAF_cat)) %>% 
-  ggplot(aes(x= VAF_cat, y= MMA_MMdx_results, color= VAF_cat))+
-  geom_boxplot()+
-  geom_jitter()+
-  theme_classic()+
-  stat_compare_means(size=5)
-```
-</div>
-</div>
+<!-- <div class = "col-md-6"> -->
+<!-- ```{r} -->
+<!-- ch_genes %>%  -->
+<!--   left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%  -->
+<!--   mutate(VAF_cat = case_when( -->
+<!--     VAF_normal < 0.1            ~ "<10%", -->
+<!--     VAF_normal >= 0.1           ~ "≥10%" -->
+<!--   )) %>%  -->
+<!--   filter(!is.na(VAF_cat)) %>%  -->
+<!--   ggplot(aes(x= VAF_cat, y= MMA_MMdx_results, color= VAF_cat))+ -->
+<!--   geom_boxplot()+ -->
+<!--   geom_jitter()+ -->
+<!--   theme_classic()+ -->
+<!--   stat_compare_means(size=5) -->
+<!-- ``` -->
+<!-- </div> -->
+<!-- </div> -->
 
-```{r}
-# ch_genes %>% 
-#   left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-#   mutate(VAF_cat = case_when(
-#     VAF_normal < 0.1            ~ "<10%",
-#     VAF_normal >= 0.1           ~ "≥10%"
-#   )) %>% 
-#   ggplot(aes(x= VAF_cat, y= MMA_MMdx_results, color= VAF_cat))+
-#   geom_boxplot()+
-#   geom_jitter()+
-#   theme_classic()+
-#   facet_wrap(. ~ CH_status_no_indel)+
-#   stat_compare_means(size=5)
-```
+<!-- ```{r} -->
+<!-- ch_genes %>% -->
+<!--   left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% -->
+<!--   mutate(VAF_cat = case_when( -->
+<!--     VAF_normal < 0.1            ~ "<10%", -->
+<!--     VAF_normal >= 0.1           ~ "≥10%" -->
+<!--   )) %>% -->
+<!--   ggplot(aes(x= VAF_cat, y= MMA_MMdx_results, color= VAF_cat))+ -->
+<!--   geom_boxplot()+ -->
+<!--   geom_jitter()+ -->
+<!--   theme_classic()+ -->
+<!--   facet_wrap(. ~ CH_status_no_indel)+ -->
+<!--   stat_compare_means(size=5) -->
+<!-- ``` -->
 
 <div class = "row">
 <div class = "col-md-6">
@@ -836,13 +927,30 @@ ch_genes %>%
 </div>
 </div>
 
+```{r}
+ch_genes %>%
+  left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+  mutate(VAF_cat = case_when(
+    VAF_normal < 0.1            ~ "<10%",
+    VAF_normal >= 0.1           ~ "≥10%"
+  )) %>%
+  ggplot(aes(x= VAF_cat, y= MMA_germline_results, color= VAF_cat))+
+  geom_boxplot()+
+  geom_jitter()+
+  theme_classic()+
+  facet_wrap(. ~ CH_status_no_indel)+
+  stat_compare_means(size=5)
+```
+
+
 # V. Stratified by Gender
 Looking within the patients with clean tumor (reason why the numbers male-female are lower than in the first table).
 <div class = "row">
 <div class = "col-md-6">
 ```{r Stratified by Gender}
 patients_clean_tumor %>%
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          Sex) %>% 
   tbl_summary(by = Sex, 
               sort = list(everything() ~ "frequency")) %>% 
@@ -853,8 +961,8 @@ patients_clean_tumor %>%
 <div class = "col-md-6">
 ```{r}
 patients_clean_tumor %>% 
-  filter(!is.na(MMA_MMdx_results) & !is.na(Sex)) %>%
-  ggplot(aes(x= Sex, y=MMA_MMdx_results))+
+  filter(!is.na(MMA_germline_results) & !is.na(Sex)) %>%
+  ggplot(aes(x= Sex, y=MMA_germline_results))+
   geom_boxplot()+
   theme_classic()+
   stat_compare_means()
@@ -865,7 +973,8 @@ patients_clean_tumor %>%
 ```{r}
 male <- patients_clean_tumor %>%
   filter(Sex == "Male") %>% 
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -874,7 +983,8 @@ male <- patients_clean_tumor %>%
 
 female <- patients_clean_tumor %>%
   filter(Sex == "Female") %>% 
-  select(MMA_MMdx_results, MMA_germline_results,
+  select(#MMA_MMdx_results, 
+         MMA_germline_results,
          CH_status_no_indel) %>% 
   tbl_summary(by = CH_status_no_indel, 
               label = list(CH_status_no_indel ~ "CH status wo indels"),
@@ -885,12 +995,12 @@ tbl_merge(list(male, female), tab_spanner = c("Male", "Female"))
 ```
 
 ```{r}
-patients_clean_tumor %>% 
-  filter(!is.na(MMA_MMdx_results) & !is.na(CH_status_no_indel)) %>%
-  ggplot(aes(x= Sex, y=MMA_MMdx_results, color= CH_status_no_indel))+
-  geom_boxplot()+
-  theme_classic()+
-  stat_compare_means()
+# patients_clean_tumor %>% 
+#   filter(!is.na(MMA_MMdx_results) & !is.na(CH_status_no_indel)) %>%
+#   ggplot(aes(x= Sex, y=MMA_MMdx_results, color= CH_status_no_indel))+
+#   geom_boxplot()+
+#   theme_classic()+
+#   stat_compare_means()
 ```
 
 ```{r}
@@ -912,6 +1022,19 @@ germline_patient_data %>%
   mutate(Age_at_germcollect = round(Age_at_germcollect, 0)) %>% 
   select(MMA_germline_results, Age_at_germcollect) %>% 
   tbl_summary(by= Age_at_germcollect)
+
+germline_patient_data %>% 
+  filter(!is.na(MMA_germline_results)) %>%
+  mutate(Age_at_germcollect = case_when(
+    Age_at_germcollect < 45    ~ "<45",
+    Age_at_germcollect < 60    ~ "<60",
+    Age_at_germcollect >= 80    ~ "≥80",
+    
+  )) %>% 
+  
+  select(MMA_germline_results, Age_at_germcollect) %>% 
+  tbl_summary(by= Age_at_germcollect) %>% 
+  bold_labels() %>% add_p() %>% bold_p(t = .05)
 
 germline_patient_data %>% 
   # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
@@ -955,7 +1078,8 @@ ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat,
 tbl1 <- patients_clean_tumor %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, Sex, raceeth,
-         egfr_germline_results, bmi_germline_results, b12_germline_results, 
+         # egfr_germline_results, 
+         bmi_germline_results, b12_germline_results, 
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
                    y = (Surv(time = patients_clean_tumor$month_at_os, 
@@ -965,7 +1089,8 @@ tbl1 <- patients_clean_tumor %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os, 
              event = patients_clean_tumor$os_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + egfr_germline_results + bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + #egfr_germline_results + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1035,7 +1160,8 @@ ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA
 tbl1 <- patients_clean_tumor %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, Sex, raceeth,
-         egfr_germline_results, bmi_germline_results, b12_germline_results, 
+         #egfr_germline_results, 
+         bmi_germline_results, b12_germline_results, 
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
                    y = (Surv(time = patients_clean_tumor$month_at_progression_drug, 
@@ -1045,7 +1171,8 @@ tbl1 <- patients_clean_tumor %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_progression_drug, 
              event = patients_clean_tumor$drug_progression_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + egfr_germline_results + bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + #egfr_germline_results + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1170,7 +1297,8 @@ ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat,
 tbl1 <- patients_clean_tumor_male %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         egfr_germline_results, bmi_germline_results, b12_germline_results,
+         # egfr_germline_results, 
+         bmi_germline_results, b12_germline_results,
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
                    y = (Surv(time = patients_clean_tumor_male$month_at_os, 
@@ -1180,7 +1308,8 @@ tbl1 <- patients_clean_tumor_male %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os, 
              event = patients_clean_tumor_male$os_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + egfr_germline_results + bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor_male) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1250,7 +1379,8 @@ ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA
 tbl1 <- patients_clean_tumor_male %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         egfr_germline_results, bmi_germline_results, b12_germline_results,
+         # egfr_germline_results, 
+         bmi_germline_results, b12_germline_results,
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
                    y = (Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
@@ -1260,7 +1390,8 @@ tbl1 <- patients_clean_tumor_male %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
              event = patients_clean_tumor_male$drug_progression_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + egfr_germline_results + bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor_male) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1336,7 +1467,8 @@ ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat,
 tbl1 <- patients_clean_tumor_female %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         egfr_germline_results, bmi_germline_results, b12_germline_results,
+         # egfr_germline_results, 
+         bmi_germline_results, b12_germline_results,
          CH_status) %>% 
   tbl_uvregression(method = survival::coxph, 
                    y = (Surv(time = patients_clean_tumor_female$month_at_os, 
@@ -1346,7 +1478,8 @@ tbl1 <- patients_clean_tumor_female %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_os, 
              event = patients_clean_tumor_female$os_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + egfr_germline_results + bmi_germline_results + b12_germline_results + CH_status, 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               bmi_germline_results + b12_germline_results + CH_status, 
              data =  patients_clean_tumor_female) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1415,7 +1548,8 @@ ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA
 tbl1 <- patients_clean_tumor_female %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         egfr_germline_results, bmi_germline_results, b12_germline_results,
+         # egfr_germline_results, 
+         bmi_germline_results, b12_germline_results,
          CH_status) %>% 
   tbl_uvregression(method = survival::coxph, 
                    y = (Surv(time = patients_clean_tumor_female$month_at_progression_drug, 
@@ -1425,7 +1559,8 @@ tbl1 <- patients_clean_tumor_female %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_progression_drug, 
              event = patients_clean_tumor_female$drug_progression_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + egfr_germline_results + bmi_germline_results + b12_germline_results + CH_status, 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               bmi_germline_results + b12_germline_results + CH_status, 
              data =  patients_clean_tumor_female) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1472,45 +1607,80 @@ tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable*
 </div>
 
 # Notes
-
 - ~~Succinate~~
+
+# Kidney function
 - kidney dysfunction increases MMA
-
-# egfr
-
+Is there a categorical classification for CrCl (aka normalcy)?
 ```{r}
-germline_patient_data %>% 
-  mutate(egfr_germline_results = as.numeric(egfr_germline_results)) %>% 
-  filter(!is.na(egfr_interpretation)) %>% 
-  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-  ggplot(aes(x= egfr_interpretation, y= egfr_germline_results))+
+# germline_patient_data %>% 
+#   mutate(egfr_germline_results = as.numeric(egfr_germline_results)) %>% 
+#   filter(!is.na(egfr_interpretation)) %>% 
+#   # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+#   ggplot(aes(x= egfr_interpretation, y= egfr_germline_results))+
+#   geom_boxplot()+
+#   geom_jitter()+
+#   theme_classic()
+# 
+germline_patient_data %>%
+  # mutate(egfr_germline_results = as.numeric(egfr_germline_results)) %>%
+  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+  ggplot(aes(x= MMA_germline_results, y= calculated_CrCl))+
+  geom_point()+
+  geom_smooth(method = "lm") +
+  stat_cor(size=5)+
+  stat_regline_equation(label.x = 1, size=5)+
+  theme_classic()
+
+# # germline_patient_data %>% 
+# #   filter(!is.na(egfr_interpretation)) %>% 
+# #   # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+# #   ggplot(aes(x= MMA_germline_results, y= egfr_interpretation))+
+# #   geom_point()+
+# #   theme_classic()
+# 
+# germline_patient_data %>% 
+#   filter(!is.na(egfr_interpretation)) %>% 
+#   # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
+#   ggplot(aes(x= egfr_interpretation, y= MMA_germline_results))+
+#   geom_boxplot()+
+#   geom_jitter()+
+#   theme_classic()
+```
+
+# B12
+```{r}
+germline_patient_data %>%
+  mutate(b12_germline_results = as.numeric(b12_germline_results)) %>%
+  filter(!is.na(b12_interpretation)) %>%
+  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+  ggplot(aes(x= b12_interpretation, y= b12_germline_results))+
   geom_boxplot()+
   geom_jitter()+
   theme_classic()
 
-germline_patient_data %>% 
-  mutate(egfr_germline_results = as.numeric(egfr_germline_results)) %>% 
-  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-  ggplot(aes(x= MMA_germline_results, y= egfr_germline_results))+
+germline_patient_data %>%
+  mutate(b12_germline_results = as.numeric(b12_germline_results)) %>%
+  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+  ggplot(aes(x= MMA_germline_results, y= b12_germline_results))+
   geom_point()+
   geom_smooth(method = "lm") +
-  stat_cor(size=5)+ 
+  stat_cor(size=5)+
   stat_regline_equation(label.x = 1, size=5)+
   theme_classic()
 
-# germline_patient_data %>% 
-#   filter(!is.na(egfr_interpretation)) %>% 
-#   # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-#   ggplot(aes(x= MMA_germline_results, y= egfr_interpretation))+
+# germline_patient_data %>%
+#   filter(!is.na(b12_interpretation)) %>%
+#   # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+#   ggplot(aes(x= MMA_germline_results, y= b12_interpretation))+
 #   geom_point()+
 #   theme_classic()
 
-germline_patient_data %>% 
-  filter(!is.na(egfr_interpretation)) %>% 
-  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
-  ggplot(aes(x= egfr_interpretation, y= MMA_germline_results))+
+germline_patient_data %>%
+  filter(!is.na(b12_interpretation)) %>%
+  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+  ggplot(aes(x= b12_interpretation, y= MMA_germline_results))+
   geom_boxplot()+
   geom_jitter()+
   theme_classic()
 ```
-
