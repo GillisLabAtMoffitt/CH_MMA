@@ -35,8 +35,6 @@ knitr::opts_chunk$set(echo = FALSE,
                       cache = FALSE,
                       fig.align='center'
                       )
-options(gtsummary.print_engine = "gt")
-options(gtsummary.as_gt.addl_cmds = "gt::tab_options(table.font.size = 12, data_row.padding = gt::px(1))")
 ```
 
 
@@ -59,6 +57,7 @@ library(lubridate)
 library(gtsummary)
 library(survival)
 library(survminer)
+theme_gtsummary_compact()
 ```
 
 ```{r load}
@@ -270,6 +269,11 @@ germline_patient_data <- germline_patient_data %>%
 
 ```
 
+Creatinine clean up:   
+-creatinine_germline_results < 0.7 -----> 0.7
+
+CrCl:   
+No capping at 125
 ```{r clean creatinine}
 germline_patient_data <- germline_patient_data %>%
   left_join(., creatinine %>%
@@ -383,9 +387,19 @@ germline_patient_data <- germline_patient_data %>%
   mutate(calculated_CrCl = case_when(
     bmi_at_creatinine >= 25                 ~ adjusted_CrCl,
     bmi_at_creatinine < 25                  ~ CrCl
+  )) %>% 
+  mutate(CrCl_units = "mL/min/1.73m2") %>% 
+  mutate(CrCl_interpretation = case_when(
+    calculated_CrCl < 60                    ~ "Low",
+    calculated_CrCl >= 60                   ~ "Normal"
   ))
 ```
 
+B12 clean up:   
+-if value    
+b12_value > 999 &   
+      b12_value <= 1999                    ~ 1500,   
+  b12_value > 1999                         ~ 2500,
 ```{r clean b12}
 b12_ <- bind_rows(b12 %>%
               select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY),
@@ -393,10 +407,39 @@ b12_ <- bind_rows(b12 %>%
               select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY)
               ) %>%
               filter(!is.na(LAB_RESULT))
+```
+
+Here all the ">" in b12 goes into the high normalcy so we might need to put them all in the same group...
+```{r}
+b12_ %>% 
+  filter(str_detect(LAB_RESULT, ">")) %>% 
+  select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY)
+```
+
+Here the b12 normalcy overlap when looking at the available value range. Maybe ask a pharmacist...
+```{r}
+b12_ %>% 
+  filter(!str_detect(LAB_RESULT, ">")) %>% 
+  select(LAB_RESULT, NORMALCY) %>% 
+  mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
+  tbl_summary(by= NORMALCY,
+              statistic=list(all_continuous() ~ "{min} - {max}"))
 
 germline_patient_data <- germline_patient_data %>%
   left_join(., b12_,
             by = "MRN") %>%
+  # Cleaning
+  mutate(b12_germline_results = case_when(
+    # Translate all character with ">" to numeric and add 1 for next step
+    str_detect(LAB_RESULT, ">")            ~ as.numeric(str_remove(LAB_RESULT, ">")) + 1
+  ),b12_germline_results = coalesce(b12_germline_results, as.numeric(LAB_RESULT)),
+  b12_germline_results = case_when(
+    b12_germline_results > 999 &
+      b12_germline_results <= 1999         ~ 1500,
+  b12_germline_results > 1999              ~ 2500,
+  TRUE                                     ~ b12_germline_results
+  )) %>% 
+
   # # Create var closest b12 results to diagnosis
   # mutate(int = abs(interval(start = LAB_DATE,
   #                       end = date_of_MM_diagnosis) /
@@ -413,7 +456,8 @@ germline_patient_data <- germline_patient_data %>%
                             end = collectiondt_germline) /
                      duration(n=1, units = "days"))) %>%
   arrange(avatar_id, int) %>% 
-  rename(b12_germline_results = LAB_RESULT, b12_unit = LAB_UNIT, 
+  select(-c(LAB_RESULT),
+         b12_germline_results, b12_unit = LAB_UNIT, 
          b12_date = EVENT_START_DTM, b12_interpretation = NORMALCY) %>%
   distinct(avatar_id, .keep_all = TRUE)
 ```
@@ -421,27 +465,24 @@ germline_patient_data <- germline_patient_data %>%
 ```{r more MMA}
 germline_patient_data <- germline_patient_data %>%
   left_join(., MMA_2 %>%
-              select(MRN, LAB_RESULT, LAB_DATE),
+              select(MRN, 
+                     MMA_germline_results_Yifen = LAB_RESULT, 
+                     MMA_date_Yifen = LAB_DATE),
             by = "MRN") %>%
-  # Create var closest MMA_2 results to germline
-  mutate(int = abs(interval(start = LAB_DATE,
-                            end = collectiondt_germline) /
-                     duration(n=1, units = "days"))) %>%
-  arrange(avatar_id, int) %>%
-  select(-int,
-         MMA_germline_results_Yifen = LAB_RESULT,
-         MMA_date_Yifen = LAB_DATE) %>%
-  distinct(avatar_id, .keep_all = TRUE) %>%
   # Take MMA closest to germline
-  
   pivot_longer(cols = c(MMA_germline_results, MMA_germline_results_Yifen),
              names_to = "MMA_data", values_to = "MMA_germline_results") %>%
   mutate(MMA_date = case_when(
     MMA_data == "MMA_germline_results"              ~ MMA_date,
     MMA_data == "MMA_germline_results_Yifen"        ~ MMA_date_Yifen
   )) %>%
-  arrange(avatar_id, MMA_date) %>%
-  distinct(avatar_id, .keep_all = TRUE)
+  # Create var closest MMA_2 results to germline
+  mutate(int = abs(interval(start = MMA_date,
+                            end = collectiondt_germline) /
+                     duration(n=1, units = "days"))) %>%
+  arrange(avatar_id, int) %>%
+  distinct(avatar_id, .keep_all = TRUE) %>%
+  select(-c(int, MMA_date_Yifen))
 ```
 
 
@@ -531,6 +572,57 @@ germline_patient_data %>%
   geom_bar(stat = "count")+
   theme_classic()
 ```
+
+Patients with very low and high values
+
+```{r}
+patient_id <- germline_patient_data %>% 
+  filter(creatinine_germline_results > 4) %>% 
+  select(MRN)
+
+creatinine %>% 
+  filter(str_detect(MRN, paste0(patient_id$MRN, collapse = "|"))) %>% 
+  group_by(MRN) %>% 
+  arrange(MRN, LAB_DATE) %>%
+  mutate(lab_interval = LAB_DATE - lag(LAB_DATE), lab_interval = ifelse(is.na(lab_interval), 0, lab_interval)
+         ) %>% 
+  ggplot(aes(x=lab_interval , as.numeric(LAB_RESULT), color= MRN))+
+  geom_line()+
+  theme_classic()
+
+creatinine %>% 
+  filter(str_detect(MRN, paste0(patient_id$MRN, collapse = "|"))) %>% 
+  group_by(MRN) %>% 
+  arrange(MRN, LAB_DATE) %>%
+  mutate(lab_interval = LAB_DATE - lag(LAB_DATE), lab_interval = ifelse(is.na(lab_interval), 0, lab_interval)
+         ) %>% 
+  ggplot(aes(x=lab_interval , as.numeric(LAB_RESULT), color= MRN))+
+  geom_line()+
+  xlim(0, 120)+
+  theme_classic()
+
+creatinine %>% 
+  filter(str_detect(MRN, paste0(patient_id$MRN, collapse = "|"))) %>% 
+  group_by(MRN) %>% 
+  arrange(MRN, LAB_DATE) %>%
+  mutate(lab_interval = LAB_DATE - lag(LAB_DATE), lab_interval = ifelse(is.na(lab_interval), 0, lab_interval)
+         ) %>% 
+  ggplot(aes(x=lab_interval , as.numeric(LAB_RESULT), color= MRN))+
+  geom_line()+
+  xlim(0, 25)+
+  theme_classic()
+
+creatinine %>% 
+  filter(str_detect(MRN, paste0(patient_id$MRN, collapse = "|"))) %>% 
+  group_by(MRN) %>% 
+  arrange(MRN, LAB_DATE) %>%
+  mutate(lab_interval = LAB_DATE - lag(LAB_DATE), lab_interval = ifelse(is.na(lab_interval), 0, lab_interval)
+         ) %>% 
+  select(MRN, LAB_DATE, lab_interval, LAB_RESULT)
+```
+
+
+
 
 ```{r}
 # germline_patient_data %>% 
@@ -1078,7 +1170,7 @@ ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat,
 tbl1 <- patients_clean_tumor %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, Sex, raceeth,
-         # egfr_germline_results, 
+         calculated_CrCl, 
          bmi_germline_results, b12_germline_results, 
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
@@ -1089,7 +1181,73 @@ tbl1 <- patients_clean_tumor %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os, 
              event = patients_clean_tumor$os_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + #egfr_germline_results + 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         calculated_CrCl, 
+         bmi_germline_results, b12_germline_results, 
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_os, 
+                             event = patients_clean_tumor$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os, 
+             event = patients_clean_tumor$os_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + Sex + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+CrCl as categorical
+```{r, fig.height = 7}
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results_cat, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         CrCl_interpretation, 
+         bmi_germline_results, b12_germline_results, 
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_os, 
+                             event = patients_clean_tumor$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os, 
+             event = patients_clean_tumor$os_event) ~ 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + CrCl_interpretation + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         CrCl_interpretation, 
+         bmi_germline_results, b12_germline_results, 
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_os, 
+                             event = patients_clean_tumor$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os, 
+             event = patients_clean_tumor$os_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + Sex + raceeth + CrCl_interpretation + 
                bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
@@ -1133,6 +1291,23 @@ tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os,
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_os, 
+                             event = patients_clean_tumor$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os, 
+             event = patients_clean_tumor$os_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + Sex + raceeth + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 ```
 </div>
 
@@ -1160,7 +1335,7 @@ ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA
 tbl1 <- patients_clean_tumor %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, Sex, raceeth,
-         #egfr_germline_results, 
+         calculated_CrCl, 
          bmi_germline_results, b12_germline_results, 
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
@@ -1171,7 +1346,73 @@ tbl1 <- patients_clean_tumor %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_progression_drug, 
              event = patients_clean_tumor$drug_progression_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + #egfr_germline_results + 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         calculated_CrCl, 
+         bmi_germline_results, b12_germline_results, 
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_progression_drug, 
+                             event = patients_clean_tumor$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_progression_drug, 
+             event = patients_clean_tumor$drug_progression_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + Sex + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+CrCl as categorical
+```{r, fig.height = 7}
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results_cat, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         CrCl_interpretation, 
+         bmi_germline_results, b12_germline_results, 
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_progression_drug, 
+                             event = patients_clean_tumor$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_progression_drug, 
+             event = patients_clean_tumor$drug_progression_event) ~ 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + CrCl_interpretation + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         CrCl_interpretation, 
+         bmi_germline_results, b12_germline_results, 
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_progression_drug, 
+                             event = patients_clean_tumor$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_progression_drug, 
+             event = patients_clean_tumor$drug_progression_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + Sex + raceeth + CrCl_interpretation + 
                bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
@@ -1210,6 +1451,24 @@ tbl1 <- patients_clean_tumor %>%
 tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_progression_drug, 
              event = patients_clean_tumor$drug_progression_event) ~ 
                MMA_germline_results_cat + Age_at_MMonly_diagnosis + Sex + raceeth + CH_status_no_indel, 
+             data =  patients_clean_tumor) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, Sex, raceeth,
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor$month_at_progression_drug, 
+                             event = patients_clean_tumor$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_progression_drug, 
+             event = patients_clean_tumor$drug_progression_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + Sex + raceeth + CH_status_no_indel, 
              data =  patients_clean_tumor) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1297,7 +1556,7 @@ ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat,
 tbl1 <- patients_clean_tumor_male %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         # egfr_germline_results, 
+         calculated_CrCl, 
          bmi_germline_results, b12_germline_results,
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
@@ -1308,13 +1567,33 @@ tbl1 <- patients_clean_tumor_male %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os, 
              event = patients_clean_tumor_male$os_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor_male) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 
+tbl1 <- patients_clean_tumor_male %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         calculated_CrCl, 
+         bmi_germline_results, b12_germline_results,
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_male$month_at_os, 
+                             event = patients_clean_tumor_male$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os, 
+             event = patients_clean_tumor_male$os_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor_male) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 # tbl1 <- patients_clean_tumor_male %>% 
 #   select(MMA_germline_results_cat, 
 #          Age_at_MMonly_diagnosis, raceeth,
@@ -1351,6 +1630,24 @@ tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os,
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor_male %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_male$month_at_os, 
+                             event = patients_clean_tumor_male$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_os, 
+             event = patients_clean_tumor_male$os_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + CH_status_no_indel, 
+             data =  patients_clean_tumor_male) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 ```
 </div>
 
@@ -1379,7 +1676,7 @@ ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA
 tbl1 <- patients_clean_tumor_male %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         # egfr_germline_results, 
+         calculated_CrCl, 
          bmi_germline_results, b12_germline_results,
          CH_status_no_indel) %>% 
   tbl_uvregression(method = survival::coxph, 
@@ -1390,13 +1687,33 @@ tbl1 <- patients_clean_tumor_male %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
              event = patients_clean_tumor_male$drug_progression_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor_male) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 
+tbl1 <- patients_clean_tumor_male %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         calculated_CrCl, 
+         bmi_germline_results, b12_germline_results,
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
+                             event = patients_clean_tumor_male$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
+             event = patients_clean_tumor_male$drug_progression_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status_no_indel, 
+             data =  patients_clean_tumor_male) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 # tbl1 <- patients_clean_tumor_male %>% 
 #   select(MMA_germline_results_cat, 
 #          Age_at_MMonly_diagnosis, raceeth,
@@ -1429,6 +1746,24 @@ tbl1 <- patients_clean_tumor_male %>%
 tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
              event = patients_clean_tumor_male$drug_progression_event) ~ 
                MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + CH_status_no_indel, 
+             data =  patients_clean_tumor_male) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor_male %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         CH_status_no_indel) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
+                             event = patients_clean_tumor_male$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_male$month_at_progression_drug, 
+             event = patients_clean_tumor_male$drug_progression_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + CH_status_no_indel, 
              data =  patients_clean_tumor_male) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
@@ -1467,7 +1802,7 @@ ggsurvplot(survfit(Surv(month_at_os, os_event) ~ MMA_germline_results_cat,
 tbl1 <- patients_clean_tumor_female %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         # egfr_germline_results, 
+         calculated_CrCl, 
          bmi_germline_results, b12_germline_results,
          CH_status) %>% 
   tbl_uvregression(method = survival::coxph, 
@@ -1478,7 +1813,28 @@ tbl1 <- patients_clean_tumor_female %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_os, 
              event = patients_clean_tumor_female$os_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status, 
+             data =  patients_clean_tumor_female) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor_female %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         calculated_CrCl, 
+         bmi_germline_results, b12_germline_results,
+         CH_status) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_female$month_at_os, 
+                             event = patients_clean_tumor_female$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_os, 
+             event = patients_clean_tumor_female$os_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status, 
              data =  patients_clean_tumor_female) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
@@ -1521,6 +1877,24 @@ tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_os,
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor_female %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         CH_status) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_female$month_at_os, 
+                             event = patients_clean_tumor_female$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_os, 
+             event = patients_clean_tumor_female$os_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + CH_status, 
+             data =  patients_clean_tumor_female) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 ```
 </div>
 
@@ -1548,7 +1922,7 @@ ggsurvplot(survfit(Surv(month_at_progression_drug, drug_progression_event) ~ MMA
 tbl1 <- patients_clean_tumor_female %>% 
   select(MMA_germline_results_cat, 
          Age_at_MMonly_diagnosis, raceeth,
-         # egfr_germline_results, 
+         calculated_CrCl, 
          bmi_germline_results, b12_germline_results,
          CH_status) %>% 
   tbl_uvregression(method = survival::coxph, 
@@ -1559,7 +1933,28 @@ tbl1 <- patients_clean_tumor_female %>%
   bold_labels() %>% italicize_levels()
 tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_progression_drug, 
              event = patients_clean_tumor_female$drug_progression_event) ~ 
-               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + #egfr_germline_results + 
+               MMA_germline_results_cat + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status, 
+             data =  patients_clean_tumor_female) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor_female %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         calculated_CrCl, 
+         bmi_germline_results, b12_germline_results,
+         CH_status) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_female$month_at_progression_drug, 
+                             event = patients_clean_tumor_female$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_progression_drug, 
+             event = patients_clean_tumor_female$drug_progression_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status, 
              data =  patients_clean_tumor_female) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
@@ -1602,6 +1997,24 @@ tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_progression_drug,
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
 
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- patients_clean_tumor_female %>% 
+  select(MMA_germline_results, 
+         Age_at_MMonly_diagnosis, raceeth,
+         CH_status) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = patients_clean_tumor_female$month_at_progression_drug, 
+                             event = patients_clean_tumor_female$drug_progression_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = patients_clean_tumor_female$month_at_progression_drug, 
+             event = patients_clean_tumor_female$drug_progression_event) ~ 
+               MMA_germline_results + Age_at_MMonly_diagnosis + raceeth + CH_status, 
+             data =  patients_clean_tumor_female) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 ```
 </div>
 </div>
@@ -1610,7 +2023,7 @@ tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable*
 - ~~Succinate~~
 
 # Kidney function
-- kidney dysfunction increases MMA
+- kidney dysfunction increases MMA   
 Is there a categorical classification for CrCl (aka normalcy)?
 ```{r}
 # germline_patient_data %>% 
@@ -1683,4 +2096,111 @@ germline_patient_data %>%
   geom_boxplot()+
   geom_jitter()+
   theme_classic()
+```
+
+# Association with MMA
+## Categorical
+```{r}
+patients_clean_tumor <- patients_clean_tumor %>% 
+  mutate(MMA_germline_results_cat = case_when(
+    MMA_germline_results_cat == "≤0.4 ~ normal"    ~ 0,
+    MMA_germline_results_cat == ">0.4 ~ high"      ~ 1
+  ))
+patients_clean_tumor_female <- patients_clean_tumor_female %>% 
+  mutate(MMA_germline_results_cat = case_when(
+    MMA_germline_results_cat == "≤0.4 ~ normal"    ~ 0,
+    MMA_germline_results_cat == ">0.4 ~ high"      ~ 1
+  ))
+patients_clean_tumor_male <- patients_clean_tumor_male %>% 
+  mutate(MMA_germline_results_cat = case_when(
+    MMA_germline_results_cat == "≤0.4 ~ normal"    ~ 0,
+    MMA_germline_results_cat == ">0.4 ~ high"      ~ 1
+  ))
+
+glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
+             data = patients_clean_tumor) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status,
+             data = patients_clean_tumor) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+
+glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
+             data = patients_clean_tumor_female) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status,
+             data = patients_clean_tumor_female) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+
+glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
+             data = patients_clean_tumor_male) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
+glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status,
+             data = patients_clean_tumor_male) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
+```
+
+## Continuous
+```{r}
+glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
+             data = patients_clean_tumor) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status,
+             data = patients_clean_tumor) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+
+glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
+             data = patients_clean_tumor_female) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status,
+             data = patients_clean_tumor_female) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+
+glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
+             data = patients_clean_tumor_male) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
+glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
+               bmi_germline_results + b12_germline_results + CH_status,
+             data = patients_clean_tumor_male) %>%
+          tbl_regression(exponentiate = TRUE#,
+                         # label = list(`data[[i]]` ~ i)
+                         ) %>% 
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
 ```
