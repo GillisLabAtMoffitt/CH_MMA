@@ -1,5 +1,5 @@
 ---
-title: "Investigate MMA = CH no indel"
+title: "Investigate MMA = CH no indel in Multiple Myeloma"
 author: "Christelle Colin-Leitzinger"
 date: "`r Sys.Date()`"
 output:
@@ -9,6 +9,7 @@ output:
     toc_collapsed: no
     theme: cerulean
     highlight: pygments
+    df_print: paged
 editor_options:
   chunk_output_type: console
 ---
@@ -43,7 +44,7 @@ div.blue { background-color:#0099CC; border-radius: 5px; padding: 20px; font-siz
 </style>
 <div class = "blue">
 
-<span style="color: white;">Investigate MMA</span>
+<span style="color: white;">Investigate MMA in Multiple Myeloma</span>
 
 </div>
 <br>
@@ -58,15 +59,23 @@ library(gtsummary)
 library(survival)
 library(survminer)
 theme_gtsummary_compact()
+theme_set(theme_classic())
 ```
 
+We had 5 patients with tumor samples contamination that we removed from the following analyses.
 ```{r load}
+contamination_tumor_ids <- paste("A025767", "A025771", "A007368", "A007322", "A000111", sep = "|")
+
 germline_patient_data <- 
   readRDS("/Users/colinccm/Documents/GitHub/CHIP-Avatar/germline_patient_data.rds") %>% 
   mutate(mrn.x = as.character(mrn.x)) %>% 
   mutate(mrn.y = as.character(mrn.y)) %>% 
   mutate(MRN = coalesce(MRN, mrn.x, mrn.y)) %>% 
-  select(-c(mrn.x, mrn.y))
+  select(-c(mrn.x, mrn.y)) %>% 
+  # Include only patients that are MM
+  filter(is_patient_MM == "Yes") %>% 
+  # Remove patients with contaminated tumor sample
+  filter(!str_detect(avatar_id, contamination_tumor_ids))
 
 path <- fs::path("","Volumes","Gillis_Research","Christelle Colin-Leitzinger", "CH and MMA")
 
@@ -397,9 +406,12 @@ germline_patient_data <- germline_patient_data %>%
 
 B12 clean up:   
 -if value    
-b12_value > 999 &   
-      b12_value <= 1999                    ~ 1500,   
-  b12_value > 1999                         ~ 2500,
+```{r, echo=TRUE}
+# b12_value > 999 &   
+#       b12_value <= 1999                    ~ 1500,   
+#   b12_value > 1999                         ~ 2500,
+```
+
 ```{r clean b12}
 b12_ <- bind_rows(b12 %>%
               select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY),
@@ -413,17 +425,32 @@ Here all the ">" in b12 goes into the high normalcy so we might need to put them
 ```{r}
 b12_ %>% 
   filter(str_detect(LAB_RESULT, ">")) %>% 
-  select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY)
+  select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY) %>% 
+  arrange(NORMALCY)
 ```
 
-Here the b12 normalcy overlap when looking at the available value range. Maybe ask a pharmacist...
-```{r}
+Here the b12 normalcy overlap when looking at the available value range. Maybe ask a pharmacist...HAHAHA
+```{r, rows.print = 200}
 b12_ %>% 
   filter(!str_detect(LAB_RESULT, ">")) %>% 
   select(LAB_RESULT, NORMALCY) %>% 
   mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
   tbl_summary(by= NORMALCY,
               statistic=list(all_continuous() ~ "{min} - {max}"))
+
+b12_ %>% 
+  filter(!str_detect(LAB_RESULT, ">")) %>% 
+  select(MRN, LAB_RESULT, NORMALCY) %>% 
+  mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
+  filter(LAB_RESULT > 212 & LAB_RESULT < 238) %>% 
+  arrange(LAB_RESULT)
+
+b12_ %>% 
+  filter(!str_detect(LAB_RESULT, ">")) %>% 
+  select(MRN, LAB_RESULT, NORMALCY) %>% 
+  mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
+  filter(LAB_RESULT > 915 & LAB_RESULT < 1245) %>% 
+  arrange(LAB_RESULT)
 
 germline_patient_data <- germline_patient_data %>%
   left_join(., b12_,
@@ -460,6 +487,47 @@ germline_patient_data <- germline_patient_data %>%
          b12_germline_results, b12_unit = LAB_UNIT, 
          b12_date = EVENT_START_DTM, b12_interpretation = NORMALCY) %>%
   distinct(avatar_id, .keep_all = TRUE)
+
+germline_patient_data %>% 
+  mutate(b12_to_germline = int) %>% 
+  mutate(MMA_to_germline = abs(interval(start = MMA_date,
+                            end = collectiondt_germline) /
+                     duration(n=1, units = "days"))) %>%
+  ggplot(aes(x=MMA_to_germline, y=b12_to_germline))+
+  geom_point()+
+  labs(x= "days from MMA to germline",
+       y= "days from b12 to germline")
+
+germline_patient_data %>% 
+  mutate(int = round(int,0)) %>% 
+  ggplot(aes(x=int))+
+  geom_bar()+
+  labs(x= "days from b12 to germline")
+
+germline_patient_data %>% 
+  mutate(int = round(int,0)) %>% 
+  ggplot(aes(x=int))+
+  geom_bar()+
+  coord_cartesian(ylim = c(0, 5))+
+  labs(x= "days from b12 to germline")
+
+germline_patient_data %>% 
+  mutate(int = abs(interval(start = b12_date,
+                            end = MMA_date) /
+                     duration(n=1, units = "days"))) %>%
+  mutate(int = round(int,0)) %>% 
+  ggplot(aes(x=int))+
+  geom_bar()+
+  labs(x= "days from b12 to MMA")
+germline_patient_data %>% 
+  mutate(int = abs(interval(start = b12_date,
+                            end = MMA_date) /
+                     duration(n=1, units = "days"))) %>%
+  mutate(int = round(int,0)) %>% 
+  ggplot(aes(x=int))+
+  geom_bar()+
+  coord_cartesian(ylim = c(0, 5))+
+  labs(x= "days from b12 to MMA")
 ```
 
 ```{r more MMA}
@@ -535,7 +603,7 @@ germline_patient_data <- germline_patient_data %>%
 
 ***
 
-# I. MMA levels distribution
+# I. MMA levels distribution in MM patients (No limit of time between germline and diagnosis)
 
 ```{r summ table}
 germline_patient_data %>% 
@@ -547,6 +615,7 @@ germline_patient_data %>%
          b12_germline_results,
          Age_at_MMonly_diagnosis, Sex, raceeth, 
          Whole, ISS_at_MMdx,
+         Disease_Status_germline,
          bmi_combined,
          CH_status_no_indel) %>%
   tbl_summary(by = Whole, 
@@ -573,7 +642,7 @@ germline_patient_data %>%
   theme_classic()
 ```
 
-Patients with very low and high values
+Patients with very low and high MMA values. Are they stable or is the value closest to germline is an artefact? 
 
 ```{r}
 patient_id <- germline_patient_data %>% 
@@ -655,7 +724,6 @@ germline_patient_data %>%
 
 
 # II. MMA levels by CH_status_no_indel
-We had 5 patients with tumor samples contamination that we removed from the following analyses.
 ```{r by CH_status_no_indel}
 contamination_tumor_ids <- paste("A025767", "A025771", "A007368", "A007322", "A000111", sep = "|")
 
@@ -1036,7 +1104,7 @@ ch_genes %>%
 
 
 # V. Stratified by Gender
-Looking within the patients with clean tumor (reason why the numbers male-female are lower than in the first table).
+Looking within the patients with clean tumor aka 5 patients were removed because of tumor contamination (reason why the numbers male-female are lower than in the first table).
 <div class = "row">
 <div class = "col-md-6">
 ```{r Stratified by Gender}
@@ -1118,9 +1186,10 @@ germline_patient_data %>%
 germline_patient_data %>% 
   filter(!is.na(MMA_germline_results)) %>%
   mutate(Age_at_germcollect = case_when(
-    Age_at_germcollect < 45    ~ "<45",
-    Age_at_germcollect < 60    ~ "<60",
-    Age_at_germcollect >= 80    ~ "≥80",
+    Age_at_germcollect < 50    ~ "<50",
+    Age_at_germcollect >= 50 &
+      Age_at_germcollect < 70    ~ "≥50-<70",
+    Age_at_germcollect >= 70    ~ "≥70",
     
   )) %>% 
   
@@ -1185,7 +1254,6 @@ tbl2 <- coxph(Surv(time = patients_clean_tumor$month_at_os,
                bmi_germline_results + b12_germline_results + CH_status_no_indel, 
              data =  patients_clean_tumor) %>%
   tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
-
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 
 tbl1 <- patients_clean_tumor %>% 
@@ -2024,7 +2092,6 @@ tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable*
 
 # Kidney function
 - kidney dysfunction increases MMA   
-Is there a categorical classification for CrCl (aka normalcy)?
 ```{r}
 # germline_patient_data %>% 
 #   mutate(egfr_germline_results = as.numeric(egfr_germline_results)) %>% 
@@ -2044,6 +2111,12 @@ germline_patient_data %>%
   stat_cor(size=5)+
   stat_regline_equation(label.x = 1, size=5)+
   theme_classic()
+
+germline_patient_data %>%
+  # mutate(egfr_germline_results = as.numeric(egfr_germline_results)) %>%
+  # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+  ggplot(aes(x= CrCl_interpretation, y= MMA_germline_results))+
+  geom_boxplot()
 
 # # germline_patient_data %>% 
 # #   filter(!is.na(egfr_interpretation)) %>% 
@@ -2099,6 +2172,7 @@ germline_patient_data %>%
 ```
 
 # Association with MMA
+Adjusted by the variables present in each table   
 ## Categorical
 ```{r}
 patients_clean_tumor <- patients_clean_tumor %>% 
