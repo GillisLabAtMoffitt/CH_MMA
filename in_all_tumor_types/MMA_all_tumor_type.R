@@ -57,6 +57,11 @@ WES_v4.7 <- WES_v4.7 %>%
          SLID_RNA_tumor = "rna_sequencing_library_id",
          DateOfCollection_tumor = "tumor_collection_date")
 
+WES_v4.7 <- WES_v4.7 %>% 
+  mutate(interval_germ_tumor = interval(start = DateOfCollection_germline, 
+                                        end = DateOfCollection_tumor)/
+           duration(n=1, units = "days"))
+
 WES_all_version <- bind_rows(WES_v4.5, 
                              WES_v4.7,
                              .id = "version")
@@ -69,13 +74,43 @@ MMA_in_germline <- inner_join(Germline_available %>%
                               MMA_2,
                               by= c("mrn" = "MRN"))
 
-non_MM <- MMA_in_germline %>% filter(histology != "97323 Multiple myeloma")
-MM_MMA <- MMA_in_germline %>% filter(histology == "97323 Multiple myeloma")
-write_csv(non_MM, "sample ids non multiple myeloma with MMA data.csv")
-write_csv(MM_MMA, "sample ids in multiple myeloma patients with MMA data.csv")
+non_HEM <- # MMA_in_germline %>% filter(histology != "97323 Multiple myeloma") %>% 
+  # distinct(avatar_key, SLID_germline, .keep_all = TRUE)
+  read_csv(paste0(path, "/processed WES ids list/matched germline tumor samples ids non-HEM v04.7.csv")) %>% 
+  mutate(mrn = as.character(mrn)) %>% 
+  inner_join(. , 
+             MMA_2 %>% 
+               distinct(MRN, .keep_all = TRUE),
+             by= c("mrn" = "MRN"))
+MM_MMA <- # MMA_in_germline %>% filter(histology == "97323 Multiple myeloma") %>% 
+  # distinct(avatar_key, SLID_germline, .keep_all = TRUE)
+  read_csv(paste0(path, "/processed WES ids list/matched germline tumor samples ids Multiple Myeloma v04.7.csv")) %>% 
+  mutate(mrn = as.character(mrn)) %>% 
+  inner_join(. , 
+             MMA_2 %>% 
+               distinct(MRN, .keep_all = TRUE),
+             by= c("mrn" = "MRN"))
+MGUS_MMA <- # MMA_in_germline %>% filter(histology == "97323 Multiple myeloma") %>% 
+  # distinct(avatar_key, SLID_germline, .keep_all = TRUE)
+  read_csv(paste0(path, "/processed WES ids list/matched germline tumor samples ids MGUS v04.7.csv")) %>% 
+  mutate(mrn = as.character(mrn)) %>% 
+  inner_join(. , 
+             MMA_2 %>% 
+               distinct(MRN, .keep_all = TRUE),
+             by= c("mrn" = "MRN"))
+
+
+write_csv(non_HEM %>% select("avatar_key" : interval_germ_tumor), 
+          "sample ids non-HEM v407 with MMA data.csv")
+write_csv(MGUS_MMA %>% select("avatar_key" : interval_germ_tumor), 
+          "sample ids MGUS v407 with MMA data.csv")
+write_csv(MM_MMA %>% select("avatar_key" : interval_germ_tumor), 
+          "sample ids in multiple myeloma patients v407 with MMA data.csv")
 
 
 
-
+write_csv(sample_data %>% 
+            distinct(subject), 
+          "ids in v04.5 all tumor types data.csv")
 
 
