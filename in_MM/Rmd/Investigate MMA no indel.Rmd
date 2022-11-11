@@ -401,7 +401,8 @@ germline_patient_data <- germline_patient_data %>%
   mutate(CrCl_interpretation = case_when(
     calculated_CrCl < 60                    ~ "Low",
     calculated_CrCl >= 60                   ~ "Normal"
-  ))
+  ), CrCl_interpretation = factor(CrCl_interpretation, 
+                                  levels = c("Low", "Normal")))
 ```
 
 B12 clean up:   
@@ -411,47 +412,28 @@ B12 clean up:
 #       b12_value <= 1999                    ~ 1500,   
 #   b12_value > 1999                         ~ 2500,
 ```
+<!-- all the ">" in b12 goes into the high normalcy so we might need to put them all in the same group... -->
+<!-- the b12 normalcy overlap when looking at the available value range. Maybe ask a pharmacist...HAHAHA -->
+And we created our own classification:
+```{r, echo=TRUE}
+# b12_interpretation = case_when(
+#     b12_germline_results < 200             ~ "Low",
+#     b12_germline_results >= 200 &
+#       b12_germline_results <= 900          ~ "Normal",
+#     b12_germline_results > 900             ~ "High"
+#   ))
+```
 
 ```{r clean b12}
 b12_ <- bind_rows(b12 %>%
-              select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY),
+              select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM),
                      b12_Yifen %>%
-              select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY)
+              select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM)
               ) %>%
               filter(!is.na(LAB_RESULT))
 ```
 
-Here all the ">" in b12 goes into the high normalcy so we might need to put them all in the same group...
-```{r}
-b12_ %>% 
-  filter(str_detect(LAB_RESULT, ">")) %>% 
-  select(MRN, LAB_RESULT, LAB_UNIT, EVENT_START_DTM, NORMALCY) %>% 
-  arrange(NORMALCY)
-```
-
-Here the b12 normalcy overlap when looking at the available value range. Maybe ask a pharmacist...HAHAHA
 ```{r, rows.print = 200}
-b12_ %>% 
-  filter(!str_detect(LAB_RESULT, ">")) %>% 
-  select(LAB_RESULT, NORMALCY) %>% 
-  mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
-  tbl_summary(by= NORMALCY,
-              statistic=list(all_continuous() ~ "{min} - {max}"))
-
-b12_ %>% 
-  filter(!str_detect(LAB_RESULT, ">")) %>% 
-  select(MRN, LAB_RESULT, NORMALCY) %>% 
-  mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
-  filter(LAB_RESULT > 212 & LAB_RESULT < 238) %>% 
-  arrange(LAB_RESULT)
-
-b12_ %>% 
-  filter(!str_detect(LAB_RESULT, ">")) %>% 
-  select(MRN, LAB_RESULT, NORMALCY) %>% 
-  mutate(LAB_RESULT = as.numeric(LAB_RESULT)) %>% 
-  filter(LAB_RESULT > 915 & LAB_RESULT < 1245) %>% 
-  arrange(LAB_RESULT)
-
 germline_patient_data <- germline_patient_data %>%
   left_join(., b12_,
             by = "MRN") %>%
@@ -466,7 +448,6 @@ germline_patient_data <- germline_patient_data %>%
   b12_germline_results > 1999              ~ 2500,
   TRUE                                     ~ b12_germline_results
   )) %>% 
-
   # # Create var closest b12 results to diagnosis
   # mutate(int = abs(interval(start = LAB_DATE,
   #                       end = date_of_MM_diagnosis) /
@@ -478,6 +459,7 @@ germline_patient_data <- germline_patient_data %>%
   #   min == int               ~ LAB_RESULT,
   #   TRUE                     ~ NA_character_
   # )) %>%
+
   # Create var closest b12 results to germline
   mutate(int = abs(interval(start = EVENT_START_DTM,
                             end = collectiondt_germline) /
@@ -485,8 +467,15 @@ germline_patient_data <- germline_patient_data %>%
   arrange(avatar_id, int) %>% 
   select(-c(LAB_RESULT),
          b12_germline_results, b12_unit = LAB_UNIT, 
-         b12_date = EVENT_START_DTM, b12_interpretation = NORMALCY) %>%
-  distinct(avatar_id, .keep_all = TRUE)
+         b12_date = EVENT_START_DTM) %>%
+  distinct(avatar_id, .keep_all = TRUE) %>% 
+  mutate(b12_interpretation = case_when(
+    b12_germline_results < 200             ~ "Low",
+    b12_germline_results >= 200 &
+      b12_germline_results <= 900          ~ "Normal",
+    b12_germline_results > 900             ~ "High"
+  ), b12_interpretation = factor(b12_interpretation, 
+                                 levels = c("Low", "Normal", "High")))
 
 germline_patient_data %>% 
   mutate(b12_to_germline = int) %>% 
@@ -612,7 +601,7 @@ germline_patient_data %>%
          MMA_germline_results, 
          creatinine_germline_results,
          calculated_CrCl,
-         b12_germline_results,
+         b12_germline_results, b12_interpretation,
          Age_at_MMonly_diagnosis, Sex, raceeth, 
          Whole, ISS_at_MMdx,
          Disease_Status_germline,
@@ -1088,18 +1077,18 @@ ch_genes %>%
 </div>
 
 ```{r}
-ch_genes %>%
-  left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
-  mutate(VAF_cat = case_when(
-    VAF_normal < 0.1            ~ "<10%",
-    VAF_normal >= 0.1           ~ "≥10%"
-  )) %>%
-  ggplot(aes(x= VAF_cat, y= MMA_germline_results, color= VAF_cat))+
-  geom_boxplot()+
-  geom_jitter()+
-  theme_classic()+
-  facet_wrap(. ~ CH_status_no_indel)+
-  stat_compare_means(size=5)
+# ch_genes %>%
+#   left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>%
+#   mutate(VAF_cat = case_when(
+#     VAF_normal < 0.1            ~ "<10%",
+#     VAF_normal >= 0.1           ~ "≥10%"
+#   )) %>%
+#   ggplot(aes(x= VAF_cat, y= MMA_germline_results, color= VAF_cat))+
+#   geom_boxplot()+
+#   geom_jitter()+
+#   theme_classic()+
+#   facet_wrap(. ~ CH_status_no_indel)+
+#   stat_compare_means(size=5)
 ```
 
 
@@ -2172,7 +2161,8 @@ germline_patient_data %>%
 ```
 
 # Association with MMA
-Adjusted by the variables present in each table   
+Adjusted by the variables present in each table
+
 ## Categorical
 ```{r}
 patients_clean_tumor <- patients_clean_tumor %>% 
@@ -2196,42 +2186,48 @@ glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status,
              data = patients_clean_tumor) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 
 glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
              data = patients_clean_tumor_female) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status,
              data = patients_clean_tumor_female) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 
 glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
              data = patients_clean_tumor_male) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 glm(MMA_germline_results_cat ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status,
              data = patients_clean_tumor_male) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 ```
 
 ## Continuous
@@ -2241,40 +2237,46 @@ glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status,
              data = patients_clean_tumor) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in overall data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in overall data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 
 glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
              data = patients_clean_tumor_female) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status,
              data = patients_clean_tumor_female) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in female data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in female data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 
 glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + CH_status,
              data = patients_clean_tumor_male) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 glm(MMA_germline_results ~ Age_at_MMonly_diagnosis + raceeth + calculated_CrCl + 
                bmi_germline_results + b12_germline_results + CH_status,
              data = patients_clean_tumor_male) %>%
           tbl_regression(exponentiate = TRUE#,
                          # label = list(`data[[i]]` ~ i)
                          ) %>% 
-           modify_spanning_header(everything() ~ paste("Association with MMA in male data"))
+           modify_spanning_header(everything() ~ paste("Association with MMA in male data")) %>% 
+  bold_labels() %>% bold_p(t = .05)
 ```
