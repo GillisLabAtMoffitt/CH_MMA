@@ -62,7 +62,7 @@ theme_gtsummary_compact()
 theme_set(theme_classic())
 ```
 
-We had 5 patients with tumor samples contamination that we removed from the following analyses.
+We had 5 patients with tumor samples contamination that were removed from the following analyses.
 ```{r load}
 contamination_tumor_ids <- paste("A025767", "A025771", "A007368", "A007322", "A000111", sep = "|")
 
@@ -154,6 +154,8 @@ MMA_2 <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"),
             by = "PATIENT_ID") %>%
   filter(!is.na(LAB_RESULT))
 ```
+
+# MMA levels distribution in MM patients (No limit of time between germline and diagnosis)
 
 ```{r new CH status}
 germline_patient_data <- germline_patient_data %>%
@@ -568,7 +570,7 @@ germline_patient_data <- germline_patient_data %>%
 
 ***
 
-# I. MMA levels distribution in MM patients (No limit of time between germline and diagnosis)
+# I. Patients and lab summary
 
 ```{r summ table}
 germline_patient_data %>% 
@@ -592,7 +594,7 @@ germline_patient_data %>%
   bold_labels()
 ```
 
-Take a look at the creatinine and CrCl
+CrCl levels in our population
 ```{r}
 germline_patient_data %>% 
   filter(!is.na(CrCl)) %>% 
@@ -601,7 +603,7 @@ germline_patient_data %>%
   theme_classic()
 ```
 
-Already seen MMA at germline
+MMA at germline levels in our population. The blue line represent the separation between low and high MMA categories (0.4).
 ```{r}
 germline_patient_data %>% 
   filter(!is.na(MMA_germline_results)) %>% 
@@ -652,7 +654,7 @@ patients_clean_tumor %>%
 ```
 <br>
 
-# III. MMA levels by CH_status_no_indel classes (DNA damages and TD)
+# III. MMA levels by CH status classes (DNA damages and TD)
 DNA damage genes are TP53, PPM1D, CHEK2 and TD genes are TET2, DNMT3A.
 ```{r}
 ch_wide <- ch_genes %>% 
@@ -733,8 +735,9 @@ ch_wide %>%
 ```
 
 ## Sensitivity analysis - MMA values by CH status in DNA damage genes only
-**When classify CH as mutations in DNA damage genes only. If no mutation in DNA damage genes, CH=no**
-`r nrow(ch_wide)` total patients - `r nrow(ch_wide %>% filter(CH_status_no_indel == "CH"))` CH patients, `r nrow(ch_wide %>% filter(CH_status_no_indel == "No CH"))` no CH, 33? Ukn      - 44 CH but with No damages genes + 579 no CH = 623 patients
+**Classify CH as mutations in DNA damage genes only. If no mutation in DNA damage genes, CH=no**  
+`r nrow(ch_wide)` total patients - `r nrow(ch_wide %>% filter(CH_status_no_indel == "CH" & DNA_damage_class == "Yes"))` CH patients with DNA damages genes, `r nrow(ch_wide %>% filter(is.na(CH_status_no_indel)))` Unknown CH,  
+- `r nrow(ch_wide %>% filter(CH_status_no_indel == "CH" & DNA_damage_class == "No"))` CH / No damages genes + `r nrow(ch_wide %>% filter(CH_status_no_indel == "No_CH"))` no CH = `r nrow(ch_wide %>% filter(CH_status_no_indel == "No_CH" | DNA_damage_class == "No"))` patients.
 ```{r}
 ch_wide %>%
   # filter(DNA_damage_class == "Yes" | CH_status_no_indel == "No CH") %>% 
@@ -771,8 +774,9 @@ ch_wide %>%
 ```
 
 ## Sensitivity analysis - MMA values by CH status wo indels in TET2/DNMT3A genes only
-**If no mutation in TD genes, CH=no**
-`r nrow(ch_wide)` total patients - `r nrow(ch_wide %>% filter(CH_status_no_indel == "CH"))` patients CH, 579 no CH, 33 Ukn      - 36 CH but with No TD genes + 579 no CH = 615 patients
+**If no mutation in TD genes, CH=no**  
+`r nrow(ch_wide)` total patients - `r nrow(ch_wide %>% filter(CH_status_no_indel == "CH" & TD_class == "Yes"))` CH patients with TD genes, `r nrow(ch_wide %>% filter(is.na(CH_status_no_indel)))` Unknown CH,  
+- `r nrow(ch_wide %>% filter(CH_status_no_indel == "CH" & TD_class == "No"))` CH / No TD genes + `r nrow(ch_wide %>% filter(CH_status_no_indel == "No_CH"))` no CH = `r nrow(ch_wide %>% filter(CH_status_no_indel == "No_CH" | TD_class == "No"))` patients.
 ```{r}
 ch_wide %>%
   # filter(TD_class == "Yes" | CH_status_no_indel == "No_CH") %>% 
@@ -1075,13 +1079,12 @@ germline_patient_data %>%
   ggplot(aes(x= MMA_germline_results, y= Age_at_germcollect))+
   geom_point()+
   geom_smooth(method = "lm") +
-  stat_cor(size=5)+ 
-  stat_regline_equation(label.x = 1, size=5)+
+  stat_cor(size=5, label.x = 0.75)+ 
+  stat_regline_equation(label.x = 1, label.y = 40, size=5)+
   theme_classic()
 ```
-
-
-
+<br>
+<br>
 
 # VII. Survival
 
