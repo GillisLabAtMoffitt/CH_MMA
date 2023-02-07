@@ -1076,11 +1076,11 @@ germline_patient_data %>%
   # left_join(., patients_clean_tumor, by = c("patient_id" = "SLID_germline")) %>% 
   filter(!is.na(MMA_germline_results)) %>%
   mutate(Age_at_germcollect = round(Age_at_germcollect, 0)) %>% 
-  ggplot(aes(x= MMA_germline_results, y= Age_at_germcollect))+
+  ggplot(aes(x= Age_at_germcollect, y= MMA_germline_results))+
   geom_point()+
   geom_smooth(method = "lm") +
-  stat_cor(size=5, label.x = 0.75)+ 
-  stat_regline_equation(label.x = 1, label.y = 40, size=5)+
+  stat_cor(size=5, label.x = 40, label.y = 1.5)+
+  stat_regline_equation(label.x = 65, label.y = 1.5, size=5)+
   theme_classic()
 ```
 <br>
