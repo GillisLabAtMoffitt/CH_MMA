@@ -1,0 +1,661 @@
+---
+title: "ICUS vs CCUS analysis"
+author: "Christelle Colin-Leitzinger"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_collapsed: no
+    theme: cerulean
+    highlight: pygments
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+<style type="text/css">
+h1.title {
+  font-size: 25px;
+}
+.figure {
+   margin-top: 25px;
+   margin-bottom: 25px;
+}
+
+table {
+    margin-top: 25px;
+    margin-bottom: 25px !important;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      cache = FALSE,
+                      fig.align='center'
+                      )
+```
+
+
+<style>
+div.blue { background-color:#0099CC; border-radius: 5px; padding: 20px; font-size: 38px}
+</style>
+<div class = "blue">
+
+<span style="color: white;">ICUS vs CCUS analysis</span>
+
+</div>
+<br>
+
+```{r library, include=FALSE}
+library(tidyverse)
+library(viridis)
+library(lubridate)
+library(labelled)
+library(gtsummary)
+library(survival)
+library(survminer)
+theme_gtsummary_compact()
+theme_set(theme_classic(base_size = 18))
+```
+
+```{r load}
+path <- fs::path("","Volumes","Gillis_Research","Christelle Colin-Leitzinger", "CH and MMA")
+
+variant <- 
+  read_csv(paste0(here::here(), "/ICUS vs CCUS analysis/Variant_data_for_Padron_2023-08-28.csv"))
+
+clinical <- 
+  read_csv(paste0(here::here(), "/ICUS vs CCUS analysis/Clinical_data_for_Padron_2023-08-28.csv"))
+
+MMA <- 
+  readxl::read_xlsx(here::here(
+    "ICUS vs CCUS analysis/Padron MMA and Succinate in human serum 12132023.xlsx"))
+```
+
+```{r}
+med_data <- left_join(MMA %>% 
+                    rename(SAMPLE_ID = s_sampleid), 
+                  clinical, 
+                  by = c("MDSEPID", "SAMPLE_ID")) %>% 
+  left_join(., variant, 
+                  by = c("MDSEPID", "SAMPLE_ID")) %>% 
+  janitor::clean_names()
+
+data <- left_join(MMA %>% 
+                    rename(SAMPLE_ID = s_sampleid), 
+                  clinical, 
+                  by = c("MDSEPID", "SAMPLE_ID")) %>% 
+  # Duplicate rows bue to drugs
+  distinct(MDSEPID, SAMPLE_ID, .keep_all = TRUE) %>% 
+  left_join(., variant, 
+                  by = c("MDSEPID", "SAMPLE_ID")) %>% 
+  janitor::clean_names() %>% 
+  rename(patient_id = mdsepid) %>% 
+  mutate(age_cat = case_when(
+    age < 50               ~ "< 50",
+    age >= 50 & 
+      age < 60             ~ "≥ 50 - 60",
+    age >= 60 & 
+      age < 70             ~ "≥ 60 - 70",
+    age >= 70 & 
+      age < 80             ~ "≥ 70 - 80",
+    age >= 80 & 
+      age < 90             ~ "≥ 80 - 90",
+    age >= 90              ~ "≥ 90"
+  )) %>% 
+  mutate(age_cat2 = case_when(
+    age < 50               ~ "< 50",
+    age >= 50 & 
+      age < 65             ~ "≥ 50 - 65",
+    age >= 65              ~ "≥ 90"
+  )) %>% 
+  mutate(height_m = height_cm / 100,
+         bmi = weight_kg / (height_m * height_m)) %>%
+  mutate(bmi_cat = case_when(
+    bmi < 18.5                  ~ "< 18.5",
+    bmi >= 18.5 &
+      bmi < 25                  ~ "18.5 - 25",
+    bmi >= 25 &
+      bmi < 30                  ~ "25 - 30",
+    bmi >= 30                   ~ "≥ 30"
+  )) %>%
+  mutate(bmi_cat = factor(bmi_cat, levels = c("< 18.5", "18.5 - 25", "25 - 30", "≥ 30"))) %>% 
+  mutate(os_event = case_when(
+    !is.na(death_dt)       ~ 1,
+    is.na(death_dt)        ~ 0
+  )) %>% 
+  mutate_at(c("death_dt", "last_contact_dt", "start_dt"), ~ as.Date(., "%m/%d/%y")) %>% 
+  mutate(os_date = coalesce(death_dt, last_contact_dt)) %>% 
+  mutate(os_time = interval(start = start_dt, end = os_date) /
+           duration(n = 1, units = "months"))
+```
+
+```{r Labeling}
+var_label(data) <- list(age = "Patient age", 
+                        sex = "Sex", 
+                        bmi = "BMI", bmi_cat = "BMI categories", 
+                        renal_disease = "Renal disease", 
+                        mma_n_m = "MMA (nM)", 
+                        succinate_ug_m_l = "Succinate (ug/ml)",
+                        baseline_b12_serum = "B12 (baseline)",
+                        baseline_creatinine_serum = "Creatinine (baseline)",
+                        age_of_the_samples_days = "Sample Storage Time (days)",
+                        variant_confidence_level = "Variant Confidence Level")
+```
+
+# I. Table 1 - Clinical
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(age, sex,
+         bmi, bmi_cat,
+         baseline_b12_serum, baseline_creatinine_serum,
+         renal_disease,
+         mma_n_m, succinate_ug_m_l,
+         group) %>% 
+  tbl_summary(by = group) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+
+med_data %>% 
+  select(med_name, med_reason,
+         group) %>% 
+  mutate(across(starts_with("med_"), ~ str_to_sentence(.))) %>% 
+  tbl_summary(by = group, 
+              sort = everything() ~ "frequency") %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+
+# II. Table 2 - Variant
+## ALL variants of all patients
+1 patient is categorized as ICUS but has a known mutation.
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(variant_confidence_level,
+         group) %>% 
+  tbl_summary(by = group) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+
+data %>% 
+  filter(variant_confidence_level == "Level 1 (Manually Curated)" &
+           group == "ICUS_GROUP") %>% 
+  select(patient_id, group,
+         gene : variant_confidence_level, 
+         everything())
+```
+
+## Mutations count summarized by gene
+```{r}
+# data %>% 
+#   filter(!is.na(gene)) %>% 
+#   # Count has patient - remove duplicate gene per patient
+#   distinct(patient_id, gene) %>% 
+#   select(gene) %>% 
+#   tbl_summary(sort = everything() ~ "frequency") %>% 
+#   bold_labels()
+
+library(fastDummies)
+dum <- data %>% 
+  select(patient_id, gene) %>% 
+  filter(!is.na(gene)) %>% 
+  distinct(patient_id, gene)
+dum %>% 
+  dummy_cols(select_columns = "gene") %>% 
+  select(-gene) %>% 
+  mutate(across(starts_with("gene"), ~ na_if(., 0))) %>% 
+  group_by(patient_id) %>% 
+  fill(everything(), .direction = "updown") %>% 
+  ungroup() %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  mutate(across(starts_with("gene"), .fns = ~ replace_na(., 0))) %>% 
+  select(-patient_id) %>% 
+  `colnames<-`(str_remove(colnames(.), "gene_")) %>% 
+  tbl_summary(sort = everything() ~ "frequency") %>% 
+  bold_labels()
+```
+
+
+# 3. Explore previous analysis
+## 1. CCUS vs. ICUS
+<div class = "row">
+<div class = "col-md-6">
+MMA
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = group, y = mma_n_m))+
+  geom_violin()+
+  geom_jitter(color="grey")+
+  geom_boxplot(width=0.1, outlier.shape = NA)+
+  labs(x = NULL, y = "MMA (nM)")
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(group, mma_n_m) %>% 
+  tbl_summary(by = group) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+
+<div class = "col-md-6">
+Succinate
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = group, y = succinate_ug_m_l))+
+  geom_violin()+
+  geom_jitter(color="grey")+
+  geom_boxplot(width=0.1, outlier.shape = NA)+
+  labs(x = NULL, y = "Succinate (ug/ml)")
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(group, succinate_ug_m_l) %>% 
+  tbl_summary(by = group) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+</div>
+
+
+## 2. Age
+<div class = "row">
+<div class = "col-md-6">
+MMA
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = age, y = mma_n_m))+
+  geom_point(aes(color = age_cat))+
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+  stat_cor(label.y = 1000)+ 
+  stat_regline_equation(label.y = 750)+
+  labs(x = "Age (continuous)", y = "MMA (nM)")
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(age_cat, mma_n_m) %>% 
+  tbl_summary(by = age_cat) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+
+<div class = "col-md-6">
+Succinate
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = age, y = succinate_ug_m_l))+
+  geom_point(aes(color = age_cat))+
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+  stat_cor(label.y = 30)+ 
+  stat_regline_equation(label.y = 20)+
+  labs(x = "Age (continuous)", y = "Succinate (ug/ml)")
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(age_cat, succinate_ug_m_l) %>% 
+  tbl_summary(by = age_cat) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+</div>
+
+## 3. Collection date
+<div class = "row">
+<div class = "col-md-6">
+MMA
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = age_of_the_samples_days, y = mma_n_m))+
+  geom_point(color = "blue")+
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+  stat_cor(label.y = 1000)+ 
+  stat_regline_equation(label.y = 750)+
+  labs(x = "Sample Storage Time (days)", y = "MMA (nM)")
+```
+</div>
+
+<div class = "col-md-6">
+Succinate
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = age_of_the_samples_days, y = succinate_ug_m_l))+
+  geom_point(color = "blue")+
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+  stat_cor(label.y = 30)+ 
+  stat_regline_equation(label.y = 20)+
+  labs(x = "Sample Storage Time (days)", y = "Succinate (ug/ml)")
+```
+</div>
+</div>
+
+## 3. Sex
+<div class = "row">
+<div class = "col-md-6">
+MMA
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = sex, y = mma_n_m))+
+  geom_violin()+
+  geom_jitter(color="grey")+
+  geom_boxplot(width=0.1, outlier.shape = NA)+
+  labs(x = NULL, y = "MMA (nM)")
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(sex, mma_n_m) %>% 
+  tbl_summary(by = sex) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+
+<div class = "col-md-6">
+Succinate
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = sex, y = succinate_ug_m_l))+
+  geom_violin()+
+  geom_jitter(color="grey")+
+  geom_boxplot(width=0.1, outlier.shape = NA)+
+  labs(x = NULL, y = "Succinate (ug/ml)")
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(sex, succinate_ug_m_l) %>% 
+  tbl_summary(by = sex) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+</div>
+
+# IV. New analysis
+## 1. Survival in overall population
+```{r}
+surv_data <- data %>% 
+  distinct(patient_id, .keep_all = TRUE)
+  
+ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+                   data=surv_data),
+           title = "OS Analysis",
+           font.main = c(20, "bold", "black"),
+           font.x = c(18, "bold", "black"),
+           font.y = c(18, "bold", "black"),
+           font.legend = c(16, "black"),
+           font.tickslab = c(16, "bold", "black"),
+           size = 1.5,
+
+           xlab = "Time in months",
+           legend = "top",
+           legend.title = "",
+           pval = TRUE,
+           conf.int = FALSE,
+           # Censor
+           censor = TRUE
+) + guides(colour = guide_legend(ncol = 1))
+
+tbl1 <- surv_data %>% 
+  select(group, 
+         mma_n_m,
+         age, sex, bmi_cat) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               group + mma_n_m + age + sex + bmi_cat, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(group, 
+         succinate_ug_m_l,
+         age, sex, bmi_cat) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               group + succinate_ug_m_l + age + sex + bmi_cat, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+## 2. Stratified by age
+<div class = "row">
+<div class = "col-md-6">
+MMA
+```{r, fig.height=8}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = age, y = mma_n_m))+
+  geom_point(aes(color = age_cat2))+
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+  stat_cor(label.y = 1000)+ 
+  stat_regline_equation(label.y = 750)+
+  labs(x = "Age", y = "MMA (nM)")+
+  facet_wrap(. ~ age_cat2, ncol = 1)
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(age_cat2, mma_n_m) %>% 
+  tbl_summary(by = age_cat2) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+
+<div class = "col-md-6">
+Succinate
+```{r, fig.height=8}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  ggplot(aes(x = age, y = succinate_ug_m_l))+
+  geom_point(aes(color = age_cat2))+
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+  stat_cor(label.y = 30)+ 
+  stat_regline_equation(label.y = 20)+
+  labs(x = "Age", y = "Succinate (ug/ml)")+
+  facet_wrap(. ~ age_cat2, ncol = 1)
+
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  select(age_cat2, succinate_ug_m_l) %>% 
+  tbl_summary(by = age_cat2) %>% 
+  bold_labels() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+</div>
+</div>
+
+
+## 3. Stratified by Sex
+### Male
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  filter(sex == "Male") %>% 
+  select(mma_n_m, succinate_ug_m_l,
+         group) %>% 
+  tbl_summary(by = group) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+
+```{r}
+surv_data <- data %>% 
+  filter(sex == "Male") %>% 
+  distinct(patient_id, .keep_all = TRUE)
+  
+ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+                   data=surv_data),
+           title = "OS Analysis in Male",
+           font.main = c(20, "bold", "black"),
+           font.x = c(18, "bold", "black"),
+           font.y = c(18, "bold", "black"),
+           font.legend = c(16, "black"),
+           font.tickslab = c(16, "bold", "black"),
+           size = 1.5,
+
+           xlab = "Time in months",
+           legend = "top",
+           legend.title = "",
+           pval = TRUE,
+           conf.int = FALSE,
+           # Censor
+           censor = TRUE
+) + guides(colour = guide_legend(ncol = 1))
+
+tbl1 <- surv_data %>% 
+  select(group, 
+         mma_n_m,
+         age, bmi_cat) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               group + mma_n_m + age + bmi_cat, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(group, 
+         succinate_ug_m_l,
+         age, bmi_cat) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               group + succinate_ug_m_l + age + bmi_cat, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+
+### Female
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  filter(sex == "Female") %>% 
+  select(mma_n_m, succinate_ug_m_l,
+         group) %>% 
+  tbl_summary(by = group) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+
+```{r}
+surv_data <- data %>% 
+  filter(sex == "Female") %>% 
+  distinct(patient_id, .keep_all = TRUE)
+  
+ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+                   data=surv_data),
+           title = "OS Analysis in Female",
+           font.main = c(20, "bold", "black"),
+           font.x = c(18, "bold", "black"),
+           font.y = c(18, "bold", "black"),
+           font.legend = c(16, "black"),
+           font.tickslab = c(16, "bold", "black"),
+           size = 1.5,
+
+           xlab = "Time in months",
+           legend = "top",
+           legend.title = "",
+           pval = TRUE,
+           conf.int = FALSE,
+           # Censor
+           censor = TRUE
+) + guides(colour = guide_legend(ncol = 1))
+
+tbl1 <- surv_data %>% 
+  select(group, 
+         mma_n_m,
+         age, bmi_cat) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               group + mma_n_m + age + bmi_cat, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(group, 
+         succinate_ug_m_l,
+         age, bmi_cat) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels()
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               group + mma_n_m + succinate_ug_m_l + age + bmi_cat, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

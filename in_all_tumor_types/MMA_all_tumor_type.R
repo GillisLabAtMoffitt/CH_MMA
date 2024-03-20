@@ -23,7 +23,7 @@ sample_data <-
 
 path <- fs::path("","Volumes","Gillis_Research","Christelle Colin-Leitzinger", "CHIP in Avatar",
                   "CH all tumor types")
-WES_v4.7 <- read_csv(paste0(path, "/processed WES ids list/matched germline tumor sample ids all tumor type v04.7.csv"))
+WES_v4.7 <- read_csv(paste0(path, "/processed WES ids list/matched germline tumor samples ids all tumor type v04.7.csv"))
 
 IDs_list <- readxl::read_xlsx(here::here("MMA_avatar_lab_report.xlsx"), 
                               sheet = "IDs list") %>%
