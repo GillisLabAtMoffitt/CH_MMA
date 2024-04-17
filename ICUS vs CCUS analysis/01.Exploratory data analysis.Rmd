@@ -177,7 +177,7 @@ data <- left_join(MMA %>%
     calculated_CrCl < 60                    ~ "Low",
     calculated_CrCl >= 60                   ~ "Normal"
   ), CrCl_interpretation = factor(CrCl_interpretation, 
-                                  levels = c("Low", "Normal"))) %>% 
+                                  levels = c("Normal", "Low"))) %>% 
   
   # Age----
   mutate(age_cat = case_when(
@@ -503,7 +503,7 @@ data %>%
 surv_data <- data %>% 
   distinct(patient_id, .keep_all = TRUE)
   
-ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
                    data=surv_data),
            title = "OS Analysis",
            font.main = c(20, "bold", "black"),
@@ -709,7 +709,7 @@ data %>%
 
 ## 3. Stratified by Sex
 ### Male
-```{r}
+```{r Male}
 data %>% 
   distinct(patient_id, .keep_all = TRUE) %>% 
   filter(sex == "Male") %>% 
@@ -726,7 +726,7 @@ surv_data <- data %>%
   filter(sex == "Male") %>% 
   distinct(patient_id, .keep_all = TRUE)
   
-ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
                    data=surv_data),
            title = "OS Analysis in Male",
            font.main = c(20, "bold", "black"),
@@ -808,7 +808,7 @@ tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable*
 
 
 ### Female
-```{r}
+```{r Female}
 data %>% 
   distinct(patient_id, .keep_all = TRUE) %>% 
   filter(sex == "Female") %>% 
@@ -825,7 +825,7 @@ surv_data <- data %>%
   filter(sex == "Female") %>% 
   distinct(patient_id, .keep_all = TRUE)
   
-ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
                    data=surv_data),
            title = "OS Analysis in Female",
            font.main = c(20, "bold", "black"),
@@ -876,7 +876,7 @@ tbl1 <- surv_data %>%
                    exponentiate = TRUE) %>% 
   bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
   bold_labels() %>% italicize_levels() %>% 
-  modify_spanning_header(everything() ~ paste("Association with MMA in male data - categorical MMA"))
+  modify_spanning_header(everything() ~ paste("Association with MMA in female data - categorical MMA"))
 tbl2 <- coxph(Surv(time = surv_data$os_time, 
              event = surv_data$os_event) ~ 
                group + mma_cat + age + bmi + CrCl_interpretation + baseline_b12_serum, 
@@ -906,8 +906,207 @@ tbl2 <- coxph(Surv(time = surv_data$os_time,
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 ```
 
-## 4. MMA & B12
+## 4. Stratified by group
+### ICUS
+```{r ICUS}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  filter(group == "ICUS_GROUP") %>% 
+  select(mma_um, mma_cat,
+         succinate_ug_m_l,
+         sex) %>% 
+  tbl_summary(by = sex) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+
 ```{r}
+surv_data <- data %>% 
+  filter(group == "ICUS_GROUP") %>% 
+  distinct(patient_id, .keep_all = TRUE)
+  
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
+                   data=surv_data),
+           title = "OS Analysis in ICUS",
+           font.main = c(20, "bold", "black"),
+           font.x = c(18, "bold", "black"),
+           font.y = c(18, "bold", "black"),
+           font.legend = c(16, "black"),
+           font.tickslab = c(16, "bold", "black"),
+           size = 1.5,
+
+           xlab = "Time in months",
+           legend = "top",
+           legend.title = "",
+           pval = TRUE,
+           conf.int = FALSE,
+           # Censor
+           censor = TRUE
+) + guides(colour = guide_legend(ncol = 1))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_um,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in ICUS data - continuous MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_um + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_cat,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in ICUS data - categorical MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_cat + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         succinate_ug_m_l,
+         sex, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with succinate in ICUS data"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + succinate_ug_m_l + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+
+### CCUS
+```{r}
+data %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  filter(group == "CCUS_GROUP") %>% 
+  select(mma_um, mma_cat,
+         succinate_ug_m_l,
+         sex) %>% 
+  tbl_summary(by = sex) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+
+```{r CCUS}
+surv_data <- data %>% 
+  filter(group == "CCUS_GROUP") %>% 
+  distinct(patient_id, .keep_all = TRUE)
+  
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
+                   data=surv_data),
+           title = "OS Analysis in CCUS",
+           font.main = c(20, "bold", "black"),
+           font.x = c(18, "bold", "black"),
+           font.y = c(18, "bold", "black"),
+           font.legend = c(16, "black"),
+           font.tickslab = c(16, "bold", "black"),
+           size = 1.5,
+
+           xlab = "Time in months",
+           legend = "top",
+           legend.title = "",
+           pval = TRUE,
+           conf.int = FALSE,
+           # Censor
+           censor = TRUE
+) + guides(colour = guide_legend(ncol = 1))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_um,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in CCUS data - continuous MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_um + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_cat,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in CCUS data - categorical MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_cat + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         succinate_ug_m_l,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with succinate in CCUS data"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + succinate_ug_m_l + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+## 5. MMA & B12
+```{r MMA & B12}
 data %>% 
   distinct(patient_id, .keep_all = TRUE) %>% 
   ggplot(aes(x = baseline_b12_serum, y = mma_um))+
@@ -932,10 +1131,10 @@ data %>%
   add_p() %>% bold_p(t = 0.05)
 ```
 
-## 5. MMA & kidney function (renal disease)
+## 6. MMA & kidney function (renal disease)
 <div class = "row">
 <div class = "col-md-6">
-```{r}
+```{r MMA & kidney function}
 data %>% 
   distinct(patient_id, .keep_all = TRUE) %>% 
   filter(!is.na(renal_disease)) %>% 
@@ -977,7 +1176,7 @@ data %>%
 
 
 # V. CCUS vs ICUS MMA when exclude patients on B12 supplementation
-```{r}
+```{r exclude patients on B12 supplementation}
 b12_excluded <- med_data %>% 
   rename(patient_id = mdsepid) %>% 
   mutate(drug_ever = case_when(
@@ -1225,7 +1424,7 @@ b12_excluded %>%
 surv_data <- b12_excluded %>% 
   distinct(patient_id, .keep_all = TRUE)
   
-ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
                    data=surv_data),
            title = "OS Analysis",
            font.main = c(20, "bold", "black"),
@@ -1445,7 +1644,7 @@ surv_data <- b12_excluded %>%
   filter(sex == "Male") %>% 
   distinct(patient_id, .keep_all = TRUE)
   
-ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
                    data=surv_data),
            title = "OS Analysis in Male",
            font.main = c(20, "bold", "black"),
@@ -1544,7 +1743,7 @@ surv_data <- b12_excluded %>%
   filter(sex == "Female") %>% 
   distinct(patient_id, .keep_all = TRUE)
   
-ggsurvplot(survfit(Surv(os_time, os_event) ~ group, 
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
                    data=surv_data),
            title = "OS Analysis in Female",
            font.main = c(20, "bold", "black"),
@@ -1595,7 +1794,7 @@ tbl1 <- surv_data %>%
                    exponentiate = TRUE) %>% 
   bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
   bold_labels() %>% italicize_levels() %>% 
-  modify_spanning_header(everything() ~ paste("Association with MMA in male data - categorical MMA"))
+  modify_spanning_header(everything() ~ paste("Association with MMA in female data - categorical MMA"))
 tbl2 <- coxph(Surv(time = surv_data$os_time, 
              event = surv_data$os_event) ~ 
                group + mma_cat + age + bmi + CrCl_interpretation + baseline_b12_serum, 
@@ -1625,7 +1824,206 @@ tbl2 <- coxph(Surv(time = surv_data$os_time,
 tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
 ```
 
-### 4. MMA & B12
+## 3. Stratified by group
+### ICUS
+```{r}
+b12_excluded %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  filter(group == "ICUS_GROUP") %>% 
+  select(mma_um, mma_cat,
+         succinate_ug_m_l,
+         sex) %>% 
+  tbl_summary(by = sex) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+
+```{r}
+surv_data <- b12_excluded %>% 
+  filter(group == "ICUS_GROUP") %>% 
+  distinct(patient_id, .keep_all = TRUE)
+  
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
+                   data=surv_data),
+           title = "OS Analysis in ICUS",
+           font.main = c(20, "bold", "black"),
+           font.x = c(18, "bold", "black"),
+           font.y = c(18, "bold", "black"),
+           font.legend = c(16, "black"),
+           font.tickslab = c(16, "bold", "black"),
+           size = 1.5,
+
+           xlab = "Time in months",
+           legend = "top",
+           legend.title = "",
+           pval = TRUE,
+           conf.int = FALSE,
+           # Censor
+           censor = TRUE
+) + guides(colour = guide_legend(ncol = 1))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_um,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in ICUS data - continuous MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_um + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_cat,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in ICUS data - categorical MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_cat + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         succinate_ug_m_l,
+         sex, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with succinate in ICUS data"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + succinate_ug_m_l + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+
+### CCUS
+```{r}
+b12_excluded %>% 
+  distinct(patient_id, .keep_all = TRUE) %>% 
+  filter(group == "CCUS_GROUP") %>% 
+  select(mma_um, mma_cat,
+         succinate_ug_m_l,
+         sex) %>% 
+  tbl_summary(by = sex) %>% 
+  bold_labels() %>% add_overall() %>% 
+  add_p() %>% bold_p(t = 0.05)
+```
+
+```{r}
+surv_data <- b12_excluded %>% 
+  filter(group == "CCUS_GROUP") %>% 
+  distinct(patient_id, .keep_all = TRUE)
+  
+ggsurvplot(survfit(Surv(os_time, os_event) ~ mma_cat, 
+                   data=surv_data),
+           title = "OS Analysis in CCUS",
+           font.main = c(20, "bold", "black"),
+           font.x = c(18, "bold", "black"),
+           font.y = c(18, "bold", "black"),
+           font.legend = c(16, "black"),
+           font.tickslab = c(16, "bold", "black"),
+           size = 1.5,
+
+           xlab = "Time in months",
+           legend = "top",
+           legend.title = "",
+           pval = TRUE,
+           conf.int = FALSE,
+           # Censor
+           censor = TRUE
+) + guides(colour = guide_legend(ncol = 1))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_um,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in CCUS data - continuous MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_um + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         mma_cat,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with MMA in CCUS data - categorical MMA"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + mma_cat + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+
+tbl1 <- surv_data %>% 
+  select(sex, 
+         succinate_ug_m_l,
+         age, bmi, 
+         CrCl_interpretation,
+         baseline_b12_serum) %>% 
+  tbl_uvregression(method = survival::coxph, 
+                   y = (Surv(time = surv_data$os_time, 
+                             event = surv_data$os_event)),
+                   exponentiate = TRUE) %>% 
+  bold_p(t = .05) %>% add_nevent(location = "level") %>% add_n(location = "level") %>%
+  bold_labels() %>% italicize_levels() %>% 
+  modify_spanning_header(everything() ~ paste("Association with succinate in CCUS data"))
+tbl2 <- coxph(Surv(time = surv_data$os_time, 
+             event = surv_data$os_event) ~ 
+               sex + succinate_ug_m_l + age + bmi + CrCl_interpretation + baseline_b12_serum, 
+             data =  surv_data) %>%
+  tbl_regression(exponentiate = TRUE) %>% bold_p(t = .05)
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("**Univariable**", "**Multivariable**"))
+```
+
+### 5. MMA & B12
 ```{r}
 b12_excluded %>% 
   distinct(patient_id, .keep_all = TRUE) %>% 
@@ -1651,7 +2049,7 @@ b12_excluded %>%
   add_p() %>% bold_p(t = 0.05)
 ```
 
-### 5. MMA & kidney function (renal disease)
+### 6. MMA & kidney function (renal disease)
 <div class = "row">
 <div class = "col-md-6">
 ```{r}
